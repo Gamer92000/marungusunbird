@@ -1,0 +1,23 @@
+@import url("https://fonts.cdnfonts.com/css/segoe-ui-variable-static-display");
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  color: rgb(224, 224, 224);
+  background-color: #2b3346;
+  font-family: "Segoe UI Variable Static Text";
+}
+
+code {
+  font-family: Consolas, "Liberation Mono", Menlo, Courier, monospace;
+}
+
+:not(pre) > code {
+  padding: 0.05em 0.4em;
+  border-radius: 0.3em;
+  background-color: rgba(255, 255, 255, 0.15);
+}

@@ -1,0 +1,35 @@
+[package]
+name = "marungu_sunbird"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+ts3-query-api = { git = "https://github.com/Brabb3l/ts3-query-api", branch = "dev", features = [
+  "serde",
+] }
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1.75"
+rocket = { version = "0.5.0", features = ["json"] }
+rocket_dyn_templates = { version = "0.1.0", features = ["tera"] }
+serde = "1.0.193"
+serde_json = { version = "1.0.108", features = ["preserve_order"] }
+regex = "1.10.2"
+roman = "0.1.6"
+env_logger = "0.10.1"
+log = "0.4.20"
+rand = "0.8.5"
+toml = "0.8.8"
+rand_seeder = "0.2.3"
+rand_pcg = "0.3.1"
+rand_core = "0.6.4"
+reqwest = "0.11.23"
+percent-encoding = "2.3.1"
+indexmap = { version = "2.1.0", features = ["serde"] }
+strsim = "0.10.0"
+thiserror = "1.0.52"
+once_cell = "1.19.0"
+bincode = "1.3.3"
+chrono = "0.4.31"
+anyhow = "1.0.78"

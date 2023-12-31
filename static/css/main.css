@@ -1,0 +1,57 @@
+header {
+  padding: 0 1rem 1rem 1rem;
+}
+
+header h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-weight: 100;
+  letter-spacing: -0.034em;
+  /* margin-bottom: 1rem; */
+}
+
+header h1 img {
+  height: 2rem;
+}
+
+.segoe_fix {
+  /* font metrics */
+  --font: Segoe UI Variable Static Text;
+  --fm-emSquare: 2048;
+  --fm-capitalHeight: 0.7; /* calc(1434 / var(--fm-emSquare))  1434 */
+  --fm-descender: 0.25; /* calc(514 / var(--fm-emSquare)) 514 */
+  --fm-ascender: 1.08; /* calc(2210 / var(--fm-emSquare)) 2210 */
+  --fm-linegap: 0;
+
+  /* desired capital height and line-height */
+  --capital-height: 100;
+  --line-height: 1;
+
+  /* compute needed values */
+  --lineheightNormal: (1.08 + 0.25);
+  --distanceBottom: 0.25;
+  --distanceTop: (1.08 - 0.7);
+  --computedFontSize: (var(--capital-height) / 0.7);
+  --contentArea: (1.33 * var(--computedFontSize));
+  --valign: (
+    (var(--distanceBottom) - var(--distanceTop)) * var(--computedFontSize)
+  );
+  --computedLineheight: (
+    (var(--line-height) * var(--capital-height)) - var(--valign)
+  );
+
+  /* set font family */
+  font-family: var(--font);
+
+  /* set capital height to equal font-size */
+  font-size: calc(var(--computedFontSize) * 1px);
+
+  /* set computed line-height */
+  line-height: calc(var(--computedLineheight) * 1px);
+}
+
+.segoe_fix span {
+  vertical-align: calc(var(--valign) * -1px);
+}

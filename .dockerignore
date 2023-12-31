@@ -1,0 +1,11 @@
+# generated files
+/target
+config.toml
+state.toml
+
+# dynamic assets
+assets/badges/*
+!assets/badges/.gitkeep
+
+# IDE files
+.vscode

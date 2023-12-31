@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <link rel="icon" href="/static/small_birb.svg" type="image/svg">
+  <title>Marungu Sunbird</title>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="/static/css/default.css">
+  <link rel="stylesheet" href="/static/css/error.css">
+</head>
+
+<body>
+  <img src="/static/big_birb.svg" />
+  <h1>An Internal Error Occured</h1>
+  <p>
+    Sorry! This should never happen, but an internal error occured.
+    Please open an issue on
+    <a href="https://github.com/Gamer92000/marungusunbird/issues" target="_blank" rel="noopener noreferrer">GitHub</a>
+    and include a short description of what you were doing, whether it is easily reproducible, and the most recent log
+    entries.
+    You can find the log using
+    <code>docker logs --tail marungusunbird</code>
+    assuming you are using Docker and the container is named <em>marungusunbird</em>.
+  </p>
+</body>
+
+</html>

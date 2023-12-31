@@ -1,0 +1,114 @@
+.tree_item {
+  position: relative;
+  color: rgb(224, 224, 224);
+  height: 24px;
+  user-select: none;
+}
+
+.tree_item .segoe_fix {
+  --capital-height: 10;
+}
+
+.tree_item * {
+  pointer-events: none;
+}
+
+.tree_item.spacer {
+  height: 20px;
+  font-style: italic;
+  color: rgb(105, 122, 151);
+}
+
+.tree_item.channel {
+  cursor: pointer;
+}
+
+.tree_item.center {
+  text-align: center;
+}
+
+.tree_item .background {
+  background: linear-gradient(
+    to right,
+    rgb(28, 37, 56) 0px,
+    rgb(19, 24, 36) 20px,
+    rgb(19, 24, 36) 30%,
+    rgb(28, 37, 56) 50%,
+    rgba(0, 0, 0, 0) 100%
+  );
+  height: 20px;
+  width: 300px;
+  max-width: 100%;
+  position: absolute;
+  left: 10px;
+  border-radius: 4px;
+  top: 2px;
+  bottom: 2px;
+}
+
+.tree_item .highlight {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 10px;
+  right: 10px;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.tree_item:hover .highlight {
+  background: rgb(28, 37, 56);
+}
+
+.tree_item .wrapper {
+  position: absolute;
+  height: 100%;
+  padding-left: 20px;
+  padding-right: 10px;
+  width: 100%;
+  box-sizing: border-box;
+  cursor: default;
+  display: flex;
+  align-items: center;
+}
+
+.tree_item .wrapper .icon {
+  margin-right: 10px;
+}
+
+.tree_item .wrapper p.spread {
+  width: 100%;
+}
+
+.tree_item .wrapper p.moderated {
+  padding: 0 7px;
+  --capital-height: 8;
+}
+
+.tree_item .wrapper .icons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #1c2538;
+  border-radius: 4px;
+  padding: 0 7px;
+  height: 20px;
+}
+
+.tree_item .wrapper .icons * {
+  /* line-height: 16px; */
+  font-size: 16px;
+}
+
+.tree_item .wrapper .icons .flag img.emoji {
+  height: 1em;
+  width: 1em;
+  vertical-align: -0.1em;
+}
+
+.tree_item .wrapper .icons .separator {
+  min-width: 1px;
+  height: 14px;
+  background: #697a97;
+  margin: 0 2px;
+}

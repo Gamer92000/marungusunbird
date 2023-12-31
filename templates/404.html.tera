@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <link rel="icon" href="/static/small_birb.svg" type="image/svg">
+  <title>Marungu Sunbird</title>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="/static/css/default.css">
+  <link rel="stylesheet" href="/static/css/error.css">
+</head>
+
+<body>
+  <img src="/static/big_birb.svg" />
+  <h1>Resource Not Found</h1>
+  <p>
+    Sorry! The resource you requested could not be found.
+    Click
+    <a href="/">here</a>
+    to go back to the home page.
+  </p>
+</body>
+
+</html>
