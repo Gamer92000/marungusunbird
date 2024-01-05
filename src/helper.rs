@@ -1,8 +1,12 @@
+use base64::{engine::general_purpose, Engine as _};
+use lazy_static::lazy_static;
+use regex::Regex;
 use serde::Serialize;
-use std::{cell::Cell, fs};
+use serde_json::Value;
+use std::{cell::Cell, collections::HashMap, fs};
 use ts3_query_api::definitions::{ChannelListDynamicEntry, ClientListDynamicEntry};
 
-use crate::badges::BadgesFile;
+use crate::{badges::BadgesFile, errors::Error};
 
 #[derive(Serialize, Clone)]
 pub struct Channel {
@@ -11,6 +15,7 @@ pub struct Channel {
     pub parent_id: i32,
     pub talk_power: i32,
     pub is_augmented: bool,
+    pub augmentation_id: Option<String>,
     pub highlight_color: Option<String>,
     pub indent_level: Cell<i32>,
 }
@@ -35,6 +40,7 @@ impl From<ChannelListDynamicEntry> for Channel {
             parent_id: channel.base.parent_id,
             talk_power: channel.voice.map_or(0, |v| v.needed_talk_power),
             is_augmented: false,
+            augmentation_id: None,
             highlight_color: None,
             indent_level: Cell::new(0),
         }
@@ -55,7 +61,10 @@ impl From<ClientListDynamicEntry> for Client {
                 c.country.map(|c| {
                     c.to_uppercase()
                         .chars()
-                        .map(|c| char::from_u32(0x1f1a5 + c as u32).unwrap())
+                        .map(|c| match char::from_u32(0x1f1a5 + c as u32) {
+                            Some(c) => c,
+                            None => c,
+                        })
                         .collect()
                 })
             }),
@@ -63,34 +72,57 @@ impl From<ClientListDynamicEntry> for Client {
     }
 }
 
-pub async fn init_badges() {
+pub fn extract_spacer_name(
+    value: &Value,
+    _args: &HashMap<String, Value>,
+) -> Result<Value, rocket_dyn_templates::tera::Error> {
+    lazy_static! {
+        static ref SPACER_PREFIX: Regex = Regex::new(r"^\[c?spacer\]\s*").unwrap();
+    }
+
+    if let Value::String(value) = value {
+        return Ok(SPACER_PREFIX.replace(value, "").into());
+    }
+
+    Ok(value.clone())
+}
+
+pub fn base64_encode(
+    value: &Value,
+    _args: &HashMap<String, Value>,
+) -> Result<Value, rocket_dyn_templates::tera::Error> {
+    if let Value::String(value) = value {
+        return Ok(general_purpose::URL_SAFE_NO_PAD.encode(value).into());
+    }
+
+    Ok(value.clone())
+}
+
+pub async fn init_badges() -> Result<(), Error> {
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0")
-        .build()
-        .unwrap();
+        .build()?;
 
     let data = client
         .get("https://badges-content.teamspeak.com/list")
         .send()
-        .await
-        .unwrap()
+        .await?
         .bytes()
-        .await
-        .unwrap();
+        .await?;
 
-    let badges = BadgesFile::parse(&data).unwrap().badges;
+    let badges = BadgesFile::parse(&data)?.badges;
 
     for badge in badges {
         // pull each badge svg and store it in the assets folder
         let data = client
             .get(&format!("{}.svg", badge.icon_url))
             .send()
-            .await
-            .unwrap()
+            .await?
             .bytes()
-            .await
-            .unwrap();
+            .await?;
 
-        fs::write(format!("static/badges/{}.svg", badge.uuid), data).unwrap();
+        fs::write(format!("static/badges/{}.svg", badge.uuid), data)?;
     }
+
+    Ok(())
 }

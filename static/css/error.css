@@ -1,11 +1,5 @@
 body {
-  display: flex;
-  flex-direction: column;
-  font-family: "Segoe UI Variable Static Text";
-  align-items: center;
   justify-content: center;
-  color: rgb(224, 224, 224);
-  background-color: #2b3346;
 }
 
 img {

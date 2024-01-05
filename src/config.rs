@@ -1,23 +1,19 @@
-use bincode::{deserialize, serialize};
-use log::{debug, error};
+use crate::errors::Error;
+use log::{debug, info};
 use rocket::figment::providers::{Env, Format, Serialized, Toml};
 use rocket::figment::Figment;
+use rocket::serde;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use thiserror::Error;
 
-use crate::augmentation::{Augmentation, AugmentationError};
+use crate::augmentation::Augmentation;
 
-#[derive(Error, Debug)]
-pub enum ConfigError {
-    #[error("Could not parse config")]
-    ParseError,
-}
-
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Default)]
 pub struct InternalConfig {
     pub augmentations: Vec<Augmentation>,
     pub last_badge_update: u64,
+    #[serde(default)]
+    pub afk_channel: Option<i32>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -52,51 +48,45 @@ pub struct Config {
 }
 
 impl Config {
-    fn read_internal_config() -> Result<InternalConfig, ConfigError> {
+    fn read_internal_config() -> Result<InternalConfig, Error> {
         // check if state.toml exists
-        if let Ok(config_file) = fs::read("state.bin") {
-            match deserialize::<InternalConfig>(&config_file) {
-                Ok(config) => return Ok(config),
-                Err(e) => {
-                    error!("Could not parse state.bin: {}", e);
-                    return Err(ConfigError::ParseError);
-                }
-            }
+        if let Ok(config_file) = fs::read_to_string("state.ron") {
+            return Ok(ron::from_str(&config_file)?);
         }
         // create empty config file
         fs::write(
-            "state.bin",
-            serialize(&InternalConfig {
-                augmentations: Vec::new(),
-                last_badge_update: 0,
-            })
-            .unwrap(),
-        )
-        .unwrap();
+            "state.ron",
+            ron::ser::to_string_pretty(
+                &InternalConfig {
+                    augmentations: Vec::new(),
+                    last_badge_update: 0,
+                    afk_channel: None,
+                },
+                ron::ser::PrettyConfig::default(),
+            )?,
+        )?;
         Ok(InternalConfig {
             augmentations: Vec::new(),
             last_badge_update: 0,
+            afk_channel: None,
         })
     }
 
-    fn read_external_config() -> Result<ExternalConfig, ConfigError> {
-        match Figment::from(Serialized::defaults(ExternalConfig::default()))
-            .merge(Toml::file("config.toml"))
-            .merge(Env::raw().only(&["HOST", "PORT", "USER", "PASS"]))
-            .extract::<ExternalConfig>()
-        {
-            Ok(config) => Ok(config),
-            Err(e) => {
-                error!("Could not load config: {}", e);
-                Err(ConfigError::ParseError)
-            }
-        }
+    fn read_external_config() -> Result<ExternalConfig, Error> {
+        Ok(
+            Figment::from(Serialized::defaults(ExternalConfig::default()))
+                .merge(Toml::file("config.toml"))
+                .merge(Env::raw().only(&["HOST", "PORT", "USER", "PASS"]))
+                .extract::<ExternalConfig>()?,
+        )
     }
 
-    pub fn read_config() -> Result<Config, ConfigError> {
+    pub fn read_config() -> Result<Config, Error> {
+        info!("Loading internal state from state.ron");
         // try loading internal config
         let internal = Config::read_internal_config()?;
 
+        info!("Loading configuration from environment variables and config.toml");
         // load external config from env variables and config.toml
         // sensible defaults are provided
         let external = Config::read_external_config()?;
@@ -111,33 +101,34 @@ impl Config {
             external.bind_port
         );
 
+        info!("Successfully loaded configuration");
+
         let config = Config { internal, external };
-        config.write_internal_config().unwrap();
+        config.write_internal_config()?;
         Ok(config)
     }
 
-    pub fn add_augmentation(&mut self, augmentation: Augmentation) {
+    pub fn add_augmentation(&mut self, augmentation: Augmentation) -> Result<(), Error> {
         self.internal.augmentations.push(augmentation);
-        self.write_internal_config().unwrap();
+        self.write_internal_config()?;
+        Ok(())
     }
 
-    pub fn remove_augmentation(
-        &mut self,
-        identifier: &str,
-    ) -> Result<Augmentation, AugmentationError> {
+    pub fn remove_augmentation(&mut self, identifier: &str) -> Result<Augmentation, Error> {
         let index = self
             .internal
             .augmentations
             .iter()
             .position(|c| c.identifier == identifier)
-            .ok_or(AugmentationError::NotFound)?;
+            .ok_or(Error::NotFound)?;
         let augmentation = self.internal.augmentations.remove(index);
-        self.write_internal_config().unwrap();
+        self.write_internal_config()?;
         Ok(augmentation)
     }
 
-    pub fn write_internal_config(&self) -> std::io::Result<()> {
-        let data = serialize(&self.internal).unwrap();
-        fs::write("state.bin", data)
+    pub fn write_internal_config(&self) -> Result<(), Error> {
+        let data = ron::ser::to_string_pretty(&self.internal, ron::ser::PrettyConfig::default())?;
+        fs::write("state.ron", data)?;
+        Ok(())
     }
 }

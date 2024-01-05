@@ -1,5 +1,10 @@
+body {
+  display: flex;
+  flex-direction: column;
+}
+
 header {
-  padding: 0 1rem 1rem 1rem;
+  padding: 0.5rem 1rem 2rem 1rem;
 }
 
 header h1 {
@@ -9,49 +14,135 @@ header h1 {
   margin: 0;
   font-weight: 100;
   letter-spacing: -0.034em;
-  /* margin-bottom: 1rem; */
 }
 
 header h1 img {
   height: 2rem;
 }
 
-.segoe_fix {
-  /* font metrics */
-  --font: Segoe UI Variable Static Text;
-  --fm-emSquare: 2048;
-  --fm-capitalHeight: 0.7; /* calc(1434 / var(--fm-emSquare))  1434 */
-  --fm-descender: 0.25; /* calc(514 / var(--fm-emSquare)) 514 */
-  --fm-ascender: 1.08; /* calc(2210 / var(--fm-emSquare)) 2210 */
-  --fm-linegap: 0;
-
-  /* desired capital height and line-height */
-  --capital-height: 100;
-  --line-height: 1;
-
-  /* compute needed values */
-  --lineheightNormal: (1.08 + 0.25);
-  --distanceBottom: 0.25;
-  --distanceTop: (1.08 - 0.7);
-  --computedFontSize: (var(--capital-height) / 0.7);
-  --contentArea: (1.33 * var(--computedFontSize));
-  --valign: (
-    (var(--distanceBottom) - var(--distanceTop)) * var(--computedFontSize)
-  );
-  --computedLineheight: (
-    (var(--line-height) * var(--capital-height)) - var(--valign)
-  );
-
-  /* set font family */
-  font-family: var(--font);
-
-  /* set capital height to equal font-size */
-  font-size: calc(var(--computedFontSize) * 1px);
-
-  /* set computed line-height */
-  line-height: calc(var(--computedLineheight) * 1px);
+#content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  width: 100%;
+  height: 100%;
 }
 
-.segoe_fix span {
-  vertical-align: calc(var(--valign) * -1px);
+@media (max-width: 700px) {
+  #content {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
+  }
+}
+
+#content #tree {
+  width: 100%;
+  height: 100%;
+}
+
+#sidepanel {
+  padding: 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+#sidepanel .center {
+  text-align: center;
+}
+
+#properties {
+  font-size: 13px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+}
+
+#properties .property {
+  background: #1c2538;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+#properties .property .name {
+  color: aquamarine;
+  font-weight: 100;
+  user-select: none;
+}
+
+#properties .property .value {
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+#properties .property .value.none {
+  color: #9d9d9d;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.actions .btn {
+  background: #1c82cc;
+  border: none;
+  border-radius: 4px;
+  padding: 0.2rem 0.5rem;
+  color: white;
+  font-size: 13px;
+  transition: background 0.2s ease;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.actions .btn:hover {
+  background: #1c6eb8;
+}
+
+.actions .btn-destructive {
+  background: #f82929;
+}
+
+.actions .btn-destructive:hover {
+  background: #ab1c1c;
+}
+
+#augmentation {
+  display: grid;
+  grid-template-columns: 2fr 3fr;
+  gap: 0.4rem;
+  font-size: 13px;
+  align-items: center;
+}
+
+#augmentation label {
+  user-select: none;
+}
+
+input[type="text"] {
+  background: #1c2538;
+  border: none;
+  border-radius: 4px;
+  padding: 0.2rem 0.5rem;
+  color: white;
+  font-size: 13px;
+  transition: background 0.2s ease;
+  text-decoration: none;
+  cursor: line;
+  font-family: Segoe UI Variable Highlight, Segoe UI Variable Static Text;
+}
+
+span.active {
+  color: #14cf7d;
+}
+
+span.inactive {
+  color: #9d9d9d;
 }

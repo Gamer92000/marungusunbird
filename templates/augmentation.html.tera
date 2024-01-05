@@ -1,0 +1,28 @@
+{% extends "index" %}
+
+{% block properties %}
+  <p class="h1 center">{{ name }}</p>
+  <div id="properties">
+    {% for prop in properties %}
+      <div class="property">
+        <span class="name">{{ prop.name }}:</span>
+        {% set value = prop.value | default(value="None") | as_str %}
+        <span class="value{% if value == "None" %} none{% endif %}">{{ value }}</span>
+      </div>
+    {% endfor %}
+  </div>
+  <p class="h1 center">Augmentation - <span class="active">Active</span></p>
+  <form onsubmit="update_augmentation(event)" id="augmentation">
+    <input type="hidden" name="channel" value="{{ name | base64_encode }}"/>
+    <label for="first_suffix">First Prefix:</label>
+    <input type="text" name="first_prefix" placeholder="First Prefix" value="{{ augmentation.first_prefix }}" />
+    <label for="middle_prefix">Middle Prefix:</label>
+    <input type="text" name="middle_prefix" placeholder="Middle Prefix" value="{{ augmentation.middle_prefix }}" />
+    <label for="last_prefix">Last Prefix:</label>
+    <input type="text" name="last_prefix" placeholder="Last Prefix" value="{{ augmentation.last_prefix }}" />
+    <div class="actions" style="grid-column: 1/3">
+      <input type="submit" class="btn btn-primray" name="update" value="Update" />
+      <input type="submit" class="btn btn-destructive" name="abridge" value="Abridge" />
+    </div>
+  </form>
+{% endblock %}

@@ -1,7 +1,7 @@
 # generated files
 /target
 config.toml
-state.bin
+state.ron
 
 # dynamic assets
 static/badges/*

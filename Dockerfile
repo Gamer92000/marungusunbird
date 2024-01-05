@@ -13,12 +13,12 @@ FROM alpine as runner
 
 WORKDIR /app
 
-COPY --from=builder /usr/local/cargo/bin/server_orchestrator /usr/local/bin/server_orchestrator
+COPY --from=builder /usr/local/cargo/bin/marungu_sunbird /usr/local/bin/marungu_sunbird
 COPY ./static static
 COPY ./templates templates
 
 EXPOSE 8000
 
-ENV RUST_LOG=warn
+ENV LOG_LEVEL=info,rocket::server=warn,ts3_query_api::protocol=debug,rocket_dyn_templates=off,rocket::shield=off,rocket::launch=off
 
-CMD ["server_orchestrator"]
+CMD ["marungu_sunbird"]

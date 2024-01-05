@@ -1,30 +1,23 @@
-use log::warn;
+use crate::errors::Error;
+use log::{debug, info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 use std::vec;
 use strsim::jaro;
-use thiserror::Error;
 use tokio::sync::Mutex;
 use ts3_query_api::definitions::Permission;
-use ts3_query_api::definitions::{ChannelListEntry, ChannelProperty, EventType};
+use ts3_query_api::definitions::{ChannelListEntry, ChannelProperty};
 use ts3_query_api::error::QueryError;
 use ts3_query_api::QueryClient;
 
-use crate::config::{Config, ConfigError};
-
-#[derive(Error, Debug)]
-pub enum AugmentationError {
-    #[error("Augmentation not found")]
-    NotFound,
-    #[error("Query Error: {0}")]
-    Query(#[from] QueryError),
-}
+use crate::config::Config;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AugmentationPrefix {
-    first: String,
-    middle: String,
-    last: String,
+    pub first: String,
+    pub middle: String,
+    pub last: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -34,19 +27,29 @@ pub struct Augmentation {
     pub prefix: AugmentationPrefix,
     pub permissions: Vec<Permission>,
     pub properties: Vec<ChannelProperty>,
+    #[serde(skip)]
+    pub regex: OnceLock<Regex>,
 }
 
 impl Augmentation {
     pub fn is_instance(&self, channel_name: &str) -> bool {
-        let filter = Regex::new(&format!(
-            r"^(({pre1})|({pre2})|({pre3})){} [IVXLCDM]+$",
-            regex::escape(&self.identifier),
-            pre1 = regex::escape(&self.prefix.first),
-            pre2 = regex::escape(&self.prefix.middle),
-            pre3 = regex::escape(&self.prefix.last)
-        ))
-        .unwrap();
-        filter.is_match(channel_name)
+        self.regex
+            .get_or_init(|| {
+                Regex::new(&format!(
+                    r"^(({pre1})|({pre2})|({pre3})){} [IVXLCDM]+$",
+                    regex::escape(&self.identifier),
+                    pre1 = regex::escape(&self.prefix.first),
+                    pre2 = regex::escape(&self.prefix.middle),
+                    pre3 = regex::escape(&self.prefix.last)
+                ))
+                .unwrap()
+            })
+            .is_match(channel_name)
+    }
+
+    pub fn set_prefix(&mut self, prefix: AugmentationPrefix) {
+        self.prefix = prefix;
+        self.regex = OnceLock::new();
     }
 }
 
@@ -56,37 +59,58 @@ pub struct AugmentationClient {
 }
 
 impl AugmentationClient {
-    pub async fn new() -> Result<Self, ConfigError> {
+    pub async fn new() -> Result<Self, Error> {
         let config = Config::read_config()?;
 
-        let client = QueryClient::connect((config.external.host.clone(), config.external.port))
-            .await
-            .unwrap();
+        info!(
+            "Connecting to server {}:{}",
+            config.external.host, config.external.port
+        );
+
+        let client =
+            QueryClient::connect((config.external.host.clone(), config.external.port)).await?;
+
+        info!("Logging in as {}", config.external.user);
 
         client
             .login(&config.external.user, &config.external.pass)
-            .await
-            .unwrap();
+            .await?;
 
-        client.use_sid(config.external.vsid).await.unwrap();
+        info!("Using virtual server {}", config.external.vsid);
 
-        client
-            .server_notify_register(EventType::Channel)
-            .await
-            .unwrap();
+        client.use_sid(config.external.vsid).await?;
+
+        // TODO(requires clientupdate): change nickname to "Marungu Sunbird"
+
+        info!("Registering for events");
+
+        client.server_notify_register_all().await?;
 
         let ret = Self {
             client,
             config: Mutex::new(config),
         };
 
-        for augmentation in ret.config.lock().await.internal.augmentations.iter() {
-            ret.recover_augmentation(augmentation).await.unwrap();
+        info!("Recovering augmentations from state.bin");
+
+        let config = ret.config.lock().await;
+        for augmentation in config.internal.augmentations.iter() {
+            ret.recover_augmentation(augmentation).await?;
         }
 
+        info!(
+            "Successfully recovered {} augmentation{}",
+            config.internal.augmentations.len(),
+            match config.internal.augmentations.len() {
+                1 => "",
+                _ => "s",
+            }
+        );
+        drop(config);
+
         // find potential augmentations managed by another instance
-        let channels = ret.client.channel_list().await.unwrap();
-        let pot_augmentation_regex = Regex::new(r"^.*[IVXLCDM]+$").unwrap();
+        let channels = ret.client.channel_list().await?;
+        let pot_augmentation_regex = Regex::new(r"^.*[IVXLCDM]+$")?;
 
         // group channel by string similarity
         let mut groups: Vec<Vec<&ChannelListEntry>> = vec![];
@@ -120,6 +144,8 @@ impl AugmentationClient {
             })
             .collect::<Vec<_>>();
 
+        drop(config);
+
         groups.iter().for_each(|g| {
             warn!(
                 "Found potential augmentations: {}",
@@ -133,8 +159,6 @@ impl AugmentationClient {
             warn!("Please ensure that Marungu Sunbird is only run once per virtual server. If there are any additional instances, please remove them. If you believe this warning is a false positive, you may safely ignore this warning.");
         }
 
-        drop(config);
-
         Ok(ret)
     }
 
@@ -145,7 +169,9 @@ impl AugmentationClient {
         permissions: &Vec<Permission>,
     ) -> Result<i32, QueryError> {
         let channel = self.client.channel_create(name, properties).await?;
-        println!("Created channel {}", channel);
+
+        debug!("Created channel {}", channel);
+
         if !permissions.is_empty() {
             self.client
                 .channel_add_perm_multiple(channel, permissions)
@@ -160,14 +186,10 @@ impl AugmentationClient {
         mut properties: Vec<ChannelProperty>,
     ) -> Result<(), QueryError> {
         // remove properties that are already set
-        properties.retain(|p| {
-            if let ChannelProperty::Name(name) = p {
-                *name != channel.name
-            } else if let ChannelProperty::Order(order) = p {
-                *order != channel.order
-            } else {
-                true
-            }
+        properties.retain(|p| match p {
+            ChannelProperty::Name(name) => *name != channel.name,
+            ChannelProperty::Order(order) => *order != channel.order,
+            _ => true,
         });
         if !properties.is_empty() {
             self.client.channel_edit(channel.id, &properties).await?;
@@ -296,7 +318,16 @@ impl AugmentationClient {
                         "{}{} {}",
                         augmentation.prefix.last,
                         augmentation.identifier,
-                        roman::to(augmentation_instances.len() as i32 + 1).unwrap()
+                        match roman::to(augmentation_instances.len() as i32 + 1) {
+                            Some(r) => r,
+                            None => {
+                                warn!(
+                                    "Could not convert {} to roman numeral",
+                                    augmentation_instances.len() + 1
+                                );
+                                (augmentation_instances.len() + 1).to_string()
+                            }
+                        }
                     ),
                     &props,
                     augmentation.permissions.as_ref(),
@@ -309,7 +340,16 @@ impl AugmentationClient {
                         "{}{} {}",
                         augmentation.prefix.middle,
                         augmentation.identifier,
-                        roman::to(augmentation_instances.len() as i32).unwrap()
+                        match roman::to(augmentation_instances.len() as i32) {
+                            Some(r) => r,
+                            None => {
+                                warn!(
+                                    "Could not convert {} to roman numeral",
+                                    augmentation_instances.len()
+                                );
+                                augmentation_instances.len().to_string()
+                            }
+                        }
                     ))],
                 )
                 .await?;
@@ -332,15 +372,8 @@ impl AugmentationClient {
         Ok(())
     }
 
-    pub async fn recover_augmentation(
-        &self,
-        augmentation: &Augmentation,
-    ) -> Result<(), AugmentationError> {
+    pub async fn recover_augmentation(&self, augmentation: &Augmentation) -> Result<(), Error> {
         let channels = self.client.channel_list().await?;
-
-        for channel in channels.iter() {
-            println!("{}", channel.name);
-        }
 
         let augmentation_instances = self.get_augmentation_instances(augmentation, &channels);
 
@@ -388,7 +421,13 @@ impl AugmentationClient {
                 "{}{} {}",
                 prefix,
                 augmentation.identifier,
-                roman::to(i as i32 + 1).unwrap()
+                match roman::to(i as i32 + 1) {
+                    Some(r) => r,
+                    None => {
+                        warn!("Could not convert {} to roman numeral", i + 1);
+                        (i + 1).to_string()
+                    }
+                }
             );
             self.change_properties(channel, vec![ChannelProperty::Name(name)])
                 .await?;
@@ -427,7 +466,16 @@ impl AugmentationClient {
                     "{}{} {}",
                     augmentation.prefix.last,
                     augmentation.identifier,
-                    roman::to(augmentation_instances.len() as i32 + 1).unwrap()
+                    match roman::to(augmentation_instances.len() as i32 + 1) {
+                        Some(r) => r,
+                        None => {
+                            warn!(
+                                "Could not convert {} to roman numeral",
+                                augmentation_instances.len() + 1
+                            );
+                            (augmentation_instances.len() + 1).to_string()
+                        }
+                    }
                 ),
                 &props,
                 &augmentation.permissions,
@@ -440,7 +488,16 @@ impl AugmentationClient {
                     "{}{} {}",
                     augmentation.prefix.middle,
                     augmentation.identifier,
-                    roman::to(augmentation_instances.len() as i32).unwrap()
+                    match roman::to(augmentation_instances.len() as i32) {
+                        Some(r) => r,
+                        None => {
+                            warn!(
+                                "Could not convert {} to roman numeral",
+                                augmentation_instances.len()
+                            );
+                            augmentation_instances.len().to_string()
+                        }
+                    }
                 ))],
             )
             .await?;
@@ -453,7 +510,7 @@ impl AugmentationClient {
         &self,
         identifier: &str,
         prefix: AugmentationPrefix,
-    ) -> Result<(), AugmentationError> {
+    ) -> Result<(), Error> {
         // ensure there are no overlaps in the augmented channels
         if self
             .config
@@ -464,7 +521,7 @@ impl AugmentationClient {
             .iter()
             .any(|c| c.identifier == identifier)
         {
-            return Err(AugmentationError::NotFound);
+            return Err(Error::NotFound);
         }
 
         let channels = self.client.channel_list().await?;
@@ -472,11 +529,13 @@ impl AugmentationClient {
         let channel = channels
             .iter()
             .find(|c| c.name == identifier)
-            .ok_or(AugmentationError::NotFound)?;
+            .ok_or(Error::NotFound)?;
 
         // find all permissions of the channel
         let permissions = self.client.channel_perm_list(channel.id).await?;
-        let permissions = permissions.into_iter().map(|p| p.perm).collect::<Vec<_>>();
+        let mut permissions = permissions.into_iter().map(|p| p.perm).collect::<Vec<_>>();
+        permissions.push(Permission::i_channel_needed_modify_power(100));
+        permissions.push(Permission::i_channel_needed_permission_modify_power(100));
 
         // find all channel properties
         let info = self.client.channel_info(channel.id).await?;
@@ -487,16 +546,25 @@ impl AugmentationClient {
                 ChannelProperty::Name(_)
                     | ChannelProperty::Order(_)
                     | ChannelProperty::FlagDefault(_)
+                    | ChannelProperty::Password(_)
             )
         });
 
+        self.change_properties(
+            channel,
+            vec![ChannelProperty::Name(format!(
+                "{}{} I",
+                prefix.first, identifier,
+            ))],
+        )
+        .await?;
         self.client
-            .channel_edit(
+            .channel_add_perm_multiple(
                 channel.id,
-                &[ChannelProperty::Name(format!(
-                    "{}{} I",
-                    prefix.first, identifier,
-                ))],
+                &[
+                    Permission::i_channel_needed_modify_power(100),
+                    Permission::i_channel_needed_permission_modify_power(100),
+                ],
             )
             .await?;
 
@@ -516,17 +584,18 @@ impl AugmentationClient {
             prefix: prefix.clone(),
             permissions,
             properties,
+            regex: OnceLock::new(),
         };
 
         self.config
             .lock()
             .await
-            .add_augmentation(augmentation.clone());
+            .add_augmentation(augmentation.clone())?;
 
         Ok(())
     }
 
-    pub async fn remove_augmentation(&self, identifier: &str) -> Result<(), AugmentationError> {
+    pub async fn remove_augmentation(&self, identifier: &str) -> Result<(), Error> {
         let mut augmentation = self.config.lock().await;
         let augmentation = augmentation.remove_augmentation(identifier)?;
         let channels = self.client.channel_list().await?;
@@ -557,19 +626,61 @@ impl AugmentationClient {
             vec![ChannelProperty::Name(identifier.to_string())],
         )
         .await?;
+        self.client
+            .channel_add_perm_multiple(
+                augmentation_instances[0].id,
+                &[
+                    Permission::i_channel_needed_modify_power(75),
+                    Permission::i_channel_needed_permission_modify_power(75),
+                ],
+            )
+            .await?;
 
         Ok(())
     }
 
-    pub async fn get_augmentation_of_channel(
+    pub async fn change_augmentation_prefix(
         &self,
-        channel: &str,
-    ) -> Result<String, AugmentationError> {
-        let augmentations = self.config.lock().await.internal.augmentations.clone();
-        let augmentation = augmentations
-            .iter()
-            .find(|a| a.is_instance(channel))
-            .ok_or(AugmentationError::NotFound)?;
-        Ok(augmentation.identifier.clone())
+        identifier: &str,
+        prefix: AugmentationPrefix,
+    ) -> Result<(), Error> {
+        let mut config = self.config.lock().await;
+        let augmentation = match config
+            .internal
+            .augmentations
+            .iter_mut()
+            .find(|a| a.identifier == identifier)
+        {
+            Some(a) => a,
+            None => return Err(Error::NotFound),
+        };
+        let channels = self.client.channel_list().await?;
+        let augmentation_instances = self.get_augmentation_instances(augmentation, &channels);
+        // rename all channels
+        for (i, channel) in augmentation_instances.iter().enumerate() {
+            let mut local_prefix = prefix.middle.as_str();
+            if i == 0 {
+                local_prefix = prefix.first.as_str();
+            } else if i == augmentation_instances.len() - 1 {
+                local_prefix = prefix.last.as_str();
+            }
+            let name = format!(
+                "{}{} {}",
+                local_prefix,
+                augmentation.identifier,
+                match roman::to(i as i32 + 1) {
+                    Some(r) => r,
+                    None => {
+                        warn!("Could not convert {} to roman numeral", i + 1);
+                        (i + 1).to_string()
+                    }
+                }
+            );
+            self.change_properties(channel, vec![ChannelProperty::Name(name)])
+                .await?;
+        }
+        augmentation.set_prefix(prefix);
+
+        Ok(())
     }
 }

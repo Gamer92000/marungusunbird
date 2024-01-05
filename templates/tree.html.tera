@@ -4,30 +4,43 @@
 {% endmacro tree_header %}
 
 {% macro tree(tree) %}
-<div id="channel_list">
+  <a class="tree_item server" href="/">
+    <div class="background"></div>
+    <div class="highlight"></div>
+    <div class="wrapper">
+      <img class="icon" src="/static/server.svg" height="22px" />
+      <p class="segoe_fix spread">
+        <span>{{tree.server_name}}</span>
+      </p>
+    </div>
+  </a>
   {% for cid in tree.channel_order -%}
-  {% set channel = tree.channel_map[cid] -%}
-  {% if channel.name is matching("^\[c?spacer\].*") and channel.indent_level == 0 -%}
-  {{ self::spacer(channel=channel) }}
-  {% else -%}
-  {{ self::channel(channel=channel) }}
-  {% endif -%}
-  {% if tree.clients[channel.id] -%}
-  {% for client in tree.clients[channel.id] -%}
-  {{ self::client(client=client, indent=channel.indent_level) }}
+    {% set channel = tree.channel_map[cid] -%}
+    {% if channel.name is matching("^\[c?spacer\].*") and channel.indent_level == 0 -%}
+      {{ self::spacer(channel=channel) }}
+    {% else -%}
+      {{ self::channel(channel=channel) }}
+    {% endif -%}
+    {% if tree.clients[channel.id] -%}
+      {% for client in tree.clients[channel.id] -%}
+        {{ self::client(client=client, indent=channel.indent_level) }}
+      {% endfor -%}
+    {% endif -%}
   {% endfor -%}
-  {% endif -%}
-  {% endfor -%}
-</div>
 {% endmacro tree %}
 
 {% macro channel(channel) %}
-<div class="tree_item channel{% if channel.is_augmented %} augmented{% endif %}"
-  onclick="{% if channel.is_augmented %}un{% endif %}augment('{{ channel.name | addslashes }}')"
-  style="margin-left: {{ channel.indent_level * 10 }}px">
+<a class="tree_item channel{% if channel.is_augmented %} augmented{% endif %}"
+  {# onclick="{% if channel.is_augmented %}un{% endif %}augment('{{ channel.name | addslashes }}')" #}
+  style="margin-left: {{ channel.indent_level * 10 }}px"
+  {% if channel.is_augmented -%}
+  href="/augmentation/{{ channel.augmentation_id | base64_encode }}"
+  {% else -%}
+  href="/channel/{{ channel.id }}"
+  {% endif -%}
+>
   <div class="background"></div>
-  <div class="highlight" {% if channel.is_augmented %}style="border: 1px solid {{ channel.highlight_color }}" {% endif
-    %}>
+  <div class="highlight" {% if channel.is_augmented %}style="border: 1px solid {{ channel.highlight_color }}" {% endif %}>
   </div>
   <div class="wrapper">
     <img class="icon" src="/static/channel.svg" height="22px" />
@@ -40,22 +53,27 @@
     </p>
     {% endif %}
   </div>
-</div>
+</a>
 {% endmacro channel %}
 
 {% macro spacer(channel) %}
-<div class="tree_item spacer{% if channel.name is matching("^\[cspacer\]") %} center{% endif %}">
+<a class="tree_item spacer{% if channel.name is matching("^\[cspacer\]") %} center{% endif %}"
+  href="/channel/{{ channel.id }}"
+>
   <div class="highlight"></div>
   <div class="wrapper">
     <p class="segoe_fix spread">
       <span>{{ channel.name | extract_spacer_name }}</span>
     </p>
   </div>
-</div>
+</a>
 {% endmacro spacer %}
 
 {% macro client(client, indent) %}
-<div class="tree_item client" style="margin-left: {{ (indent + 1) * 10 }}px">
+<a class="tree_item client"
+style="margin-left: {{ (indent + 1) * 10 }}px"
+href="/client/{{ client.id }}"
+>
   <div class="highlight"></div>
   <div class="wrapper">
     {% if client.is_query %}
@@ -86,5 +104,5 @@
     </div>
     {% endif %}
   </div>
-</div>
+</a>
 {% endmacro client %}

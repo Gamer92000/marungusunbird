@@ -3,9 +3,17 @@
 <html>
 
 <head>
+  <meta charset="utf-8">
   <link rel="icon" href="/static/small_birb.svg" type="image/svg">
   <title>Marungu Sunbird</title>
-  <meta charset="utf-8">
+  
+  <meta property="og:title" content="Marungu Sunbird">
+  <meta property="og:site_name" content="Marungu Sunbird">
+  <meta property="og:description" content="A simple rusty TeamSpeak server augmentation.">
+  <meta property="og:image" content="/static/big_birb.svg">
+  <meta property="og:image:alt" content="A rare and endangered nectar-feeding bird that is only found in a small forest in the Marungu highlands of Congo. It has a long, decurved black bill and is mainly green with a blue tail and a yellow belly.">
+  <meta property="og:type" content="website">
+  
   <link rel="stylesheet" href="/static/css/default.css">
   <link rel="stylesheet" href="/static/css/main.css">
   <script src="https://cdn.jsdelivr.net/npm/twemoji/dist/twemoji.min.js"></script>
@@ -21,14 +29,21 @@
 </head>
 
 <body>
-  <header>
-    <h1>
-      <img src="static/small_birb.svg" />
-      Marungu Sunbird
-    </h1>
-  </header>
-
-  {{ tree::tree(tree=tree) }}
+  <div id="wrapper">
+    <header>
+      <h1><img src="/static/small_birb.svg" />Marungu Sunbird</h1>
+    </header>
+    <div id="content">
+      <div id="tree">
+        {{ tree::tree(tree=tree) }}
+      </div>
+      <div id="sidepanel">
+        {% block properties %}
+        <p class="h1 center">{{ name }}</p>
+        {% endblock %}
+      </div>
+    </div>
+  </div>
 </body>
 
 </html>

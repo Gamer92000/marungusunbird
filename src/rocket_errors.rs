@@ -1,4 +1,4 @@
-use rocket::{catch, Request};
+use rocket::catch;
 use rocket_dyn_templates::Template;
 use serde_json::json;
 
@@ -8,6 +8,6 @@ pub fn internal_error() -> Template {
 }
 
 #[catch(404)]
-pub fn not_found(req: &Request) -> String {
-    format!("I couldn't find '{}'. Try something else?", req.uri())
+pub fn not_found() -> Template {
+    Template::render("404", json!({}))
 }
