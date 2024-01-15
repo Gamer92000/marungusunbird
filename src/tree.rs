@@ -27,7 +27,8 @@ pub async fn build_tree(
     client: &QueryClient,
     augmentations: &[Augmentation],
 ) -> Result<Tree, Error> {
-    let server_name = "TODO(needs serverinfo): Servername".to_string();
+    let server = client.server_info().await?;
+    let server_name = server.name;
 
     let channels = client
         .channel_list_dynamic(ChannelListFlags::default().with_voice().with_flags())

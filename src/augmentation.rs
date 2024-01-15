@@ -168,7 +168,20 @@ impl AugmentationClient {
         properties: &[ChannelProperty],
         permissions: &Vec<Permission>,
     ) -> Result<i32, QueryError> {
-        let channel = self.client.channel_create(name, properties).await?;
+        let mut properties = properties.to_vec();
+        let mut icon = None;
+        if let Some(index) = properties
+            .iter()
+            .position(|p| matches!(p, ChannelProperty::IconId(_)))
+        {
+            icon = Some(properties.remove(index));
+        }
+
+        let channel = self.client.channel_create(name, &properties).await?;
+
+        if let Some(icon) = icon {
+            self.client.channel_edit(channel, &[icon]).await?;
+        }
 
         debug!("Created channel {}", channel);
 

@@ -40,6 +40,15 @@
       <div id="sidepanel">
         {% block properties %}
         <p class="h1 center">{{ name }}</p>
+        <div id="properties">
+          {% for prop in properties %}
+            <div class="property">
+              <span class="name">{{ prop.name }}:</span>
+              {% set value = prop.value | default(value="None") | as_str %}
+              <span class="value{% if value == "None" %} none{% endif %}">{{ value }}</span>
+            </div>
+          {% endfor %}
+        </div>
         {% endblock %}
       </div>
     </div>

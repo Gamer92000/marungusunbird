@@ -1,4 +1,5 @@
 use base64::{engine::general_purpose, Engine as _};
+use chrono::Duration;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::Serialize;
@@ -125,4 +126,26 @@ pub async fn init_badges() -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+pub fn format_duration(seconds: i64) -> String {
+    let duration = Duration::seconds(seconds);
+    let years = duration.num_weeks() / 52;
+    let weeks = duration.num_weeks() % 52;
+    let days = duration.num_days() % 7;
+    let hours = (duration.num_hours() + 1) % 24; // round up to the next hour
+
+    let mut result = String::new();
+    if years > 0 {
+        result.push_str(&format!("{} y, ", years));
+    }
+    if weeks > 0 {
+        result.push_str(&format!("{} w, ", weeks));
+    }
+    if days > 0 {
+        result.push_str(&format!("{} d, ", days));
+    }
+    result.push_str(&format!("{} h", hours));
+
+    result
 }

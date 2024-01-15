@@ -1,7 +1,8 @@
 use base64::{engine::general_purpose, Engine as _};
+use chrono::prelude::DateTime;
+use chrono::Utc;
 use log::{error, info};
 use rocket::fs::NamedFile;
-use rocket::http::RawStr;
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::{get, post, State};
@@ -10,10 +11,11 @@ use serde::Deserialize;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, UNIX_EPOCH};
 use ts3_query_api::definitions::Codec;
 
 use crate::augmentation::{AugmentationClient, AugmentationPrefix};
-use crate::helper::init_badges;
+use crate::helper::{format_duration, init_badges};
 use crate::tree::build_tree;
 
 // ===============
@@ -75,13 +77,42 @@ pub async fn tree(client: &State<Arc<AugmentationClient>>) -> Template {
         }
     };
     drop(config);
-    // TODO: get data for server
+
+    let server = client.client.server_info().await.unwrap();
+
+    let created = UNIX_EPOCH + Duration::from_secs(server.created);
+    // Create DateTime from SystemTime
+    let created = DateTime::<Utc>::from(created);
+    // Formats the combined date and time with the specified format string.
+    let created = created.format("%d.%m.%Y %H:%M").to_string();
 
     Template::render(
         "index",
         json!({
             "tree": tree,
-            "name": "TODO(needs serverinfo): Servername",
+            "name": server.name.to_string(),
+            "properties": [
+                {"name": "VS ID", "value": server.id},
+                {"name": "Welcome Message", "value": server.welcome_message},
+                {"name": "Created", "value": created},
+                {"name": "Uptime", "value": format_duration(server.uptime as i64)},
+                {"name": "Max Clients", "value": server.max_clients},
+                {"name": "Listen", "value": server
+                .ip
+                .split(", ")
+                .map(|ip| {
+                    if ip.contains(':') {
+                        format!("[{}]:{}", ip, server.port)
+                    } else {
+                        format!("{}:{}", ip, server.port)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ")},
+                {"name": "Version", "value": server.version},
+                {"name": "Platform", "value": server.platform},
+                {"name": "Capabilities", "value": server.capability_extensions}
+            ],
         }),
     )
 }
@@ -113,7 +144,7 @@ pub async fn channel(
     {
         let redirection = format!(
             "/augmentation/{}",
-            RawStr::new(&augmentation.identifier).percent_encode()
+            general_purpose::URL_SAFE_NO_PAD.encode(&augmentation.identifier)
         );
         println!("Redirecting to {}", redirection);
         return Err(Redirect::to(redirection));
