@@ -25,7 +25,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           tags: |
-            gamer92000/marungusunbird:${{ github.sha }}
-            gamer92000/marungusunbird:latest
+            ghcr.io/gamer92000/marungusunbird:${{ github.sha }}
+            ghcr.io/gamer92000/marungusunbird:latest
           # build on feature branches, push only on main branch
           push: ${{ github.ref == 'refs/heads/main' }}
