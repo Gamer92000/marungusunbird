@@ -76,7 +76,15 @@ impl Config {
         Ok(
             Figment::from(Serialized::defaults(ExternalConfig::default()))
                 .merge(Toml::file("config.toml"))
-                .merge(Env::raw().only(&["HOST", "PORT", "USER", "PASS"]))
+                .merge(Env::raw().only(&[
+                    "HOST",
+                    "PORT",
+                    "USER",
+                    "PASS",
+                    "VSID",
+                    "BIND_ADDR",
+                    "BIND_PORT",
+                ]))
                 .extract::<ExternalConfig>()?,
         )
     }

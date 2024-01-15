@@ -2,7 +2,7 @@
 <img src='static/big_birb.svg' width='200'>
 
 # Marungu Sunbird
-![deploy](https://img.shields.io/github/actions/workflow/status/gamer92000/marungusunbird/deploy)
+![deploy](https://img.shields.io/github/actions/workflow/status/gamer92000/marungusunbird/deploy.yml)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![language](https://img.shields.io/github/languages/top/gamer92000/marungusunbird)
 ![commit](https://img.shields.io/github/last-commit/gamer92000/marungusunbird)
