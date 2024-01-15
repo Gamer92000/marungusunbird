@@ -2222,7 +2222,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "ts3-query-api"
 version = "0.2.0"
-source = "git+https://github.com/Brabb3l/ts3-query-api?branch=dev#fbcc1191dd1fe76ba4c4008b6be9cddd11d8a251"
+source = "git+https://github.com/Brabb3l/ts3-query-api?branch=dev#5431e83e8c3d598169538bf7eb922d41ba5ffb8e"
 dependencies = [
  "bytes",
  "env_logger",

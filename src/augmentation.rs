@@ -6,8 +6,8 @@ use std::sync::OnceLock;
 use std::vec;
 use strsim::jaro;
 use tokio::sync::Mutex;
-use ts3_query_api::definitions::Permission;
 use ts3_query_api::definitions::{ChannelListEntry, ChannelProperty};
+use ts3_query_api::definitions::{ClientProperty, Permission};
 use ts3_query_api::error::QueryError;
 use ts3_query_api::QueryClient;
 
@@ -80,7 +80,9 @@ impl AugmentationClient {
 
         client.use_sid(config.external.vsid).await?;
 
-        // TODO(requires clientupdate): change nickname to "Marungu Sunbird"
+        client
+            .client_update(&[ClientProperty::Nickname("Marungu Sunbird".to_string())])
+            .await?;
 
         info!("Registering for events");
 
