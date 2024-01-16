@@ -55,7 +55,7 @@ jobs:
       - name: Extract Version
         id: extract_version
         run: |
-          echo ::set-output name=VERSION::${cat Cargo.toml | grep version | head -1 | cut -d '"' -f 2}
+          echo ::set-output name=VERSION::$(cat Cargo.toml | grep version | head -1 | cut -d '"' -f 2)
       - name: Build image and push to GHCR
         uses: docker/build-push-action@v5
         with:
