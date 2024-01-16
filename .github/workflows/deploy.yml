@@ -63,3 +63,4 @@ jobs:
             ghcr.io/gamer92000/marungusunbird:${{ github.sha }}
             ghcr.io/gamer92000/marungusunbird:${{ steps.extract_version.outputs.VERSION }}
             ghcr.io/gamer92000/marungusunbird:latest
+          push: true
