@@ -1,0 +1,22 @@
+name: Deploy
+
+on:
+  pull_request: # This will trigger the workflow for pull requests
+
+jobs:
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Cargo
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Run clippy
+        uses: giraffate/clippy-action@v1
+        with:
+          reporter: github-pr-review
+          github_token: ${{ secrets.GITHUB_TOKEN }}
