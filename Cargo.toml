@@ -24,7 +24,7 @@ toml = "0.8.10"
 rand_seeder = "0.2.3"
 rand_pcg = "0.3.1"
 rand_core = "0.6.4"
-reqwest = "0.11.23"
+reqwest = "0.11.25"
 percent-encoding = "2.3.1"
 indexmap = { version = "2.2.1", features = ["serde"] }
 strsim = "0.11.0"
