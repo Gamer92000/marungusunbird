@@ -7,7 +7,7 @@ services:
       - "8000:8000"
     environment:
       HOST: 127.0.0.1
-      PORT: 10011
+      PORT: 10022
       USER: serveradmin
       PASS: password
       VSID: 1

@@ -37,7 +37,7 @@ pub async fn badge(client: &State<Arc<AugmentationClient>>, badge: &str) -> Opti
         // init badges, but don't wait for it
         tokio::spawn(async move {
             if let Err(e) = init_badges().await {
-                error!("Could not update badges: {}", e);
+                error!("Could not update badges: {e}");
             }
         });
     }
@@ -72,7 +72,7 @@ pub async fn tree(client: &State<Arc<AugmentationClient>>) -> Template {
     let tree = match build_tree(&client.client, &config.internal.augmentations).await {
         Ok(tree) => tree,
         Err(e) => {
-            error!("Could not build tree: {}", e);
+            error!("Could not build tree: {e}");
             panic!("Trigger Rocket 500 error")
         }
     };
@@ -126,7 +126,7 @@ pub async fn channel(
     let tree = match build_tree(&client.client, &config.internal.augmentations).await {
         Ok(tree) => tree,
         Err(e) => {
-            error!("Could not build tree: {}", e);
+            error!("Could not build tree: {e}");
             panic!("Trigger Rocket 500 error")
         }
     };
@@ -146,7 +146,7 @@ pub async fn channel(
             "/augmentation/{}",
             general_purpose::URL_SAFE_NO_PAD.encode(&augmentation.identifier)
         );
-        println!("Redirecting to {}", redirection);
+        info!("Redirecting to {redirection}");
         return Err(Redirect::to(redirection));
     }
 
@@ -194,14 +194,14 @@ pub async fn augmentation(
         match general_purpose::URL_SAFE_NO_PAD.decode(name.as_bytes()) {
             Ok(name) => name,
             Err(e) => {
-                error!("Could not decode augmentation name: {}", e);
+                error!("Could not decode augmentation name: {e}");
                 return Err(Redirect::to("/"));
             }
         },
     ) {
         Ok(name) => name,
         Err(e) => {
-            error!("Could not decode augmentation name: {}", e);
+            error!("Could not decode augmentation name: {e}");
             return Err(Redirect::to("/"));
         }
     };
@@ -210,7 +210,7 @@ pub async fn augmentation(
     let tree = match build_tree(&client.client, &config.internal.augmentations).await {
         Ok(tree) => tree,
         Err(e) => {
-            error!("Could not build tree: {}", e);
+            error!("Could not build tree: {e}");
             panic!("Trigger Rocket 500 error")
         }
     };
@@ -300,7 +300,7 @@ pub async fn client(
     let tree = match build_tree(&client.client, &config.internal.augmentations).await {
         Ok(tree) => tree,
         Err(e) => {
-            error!("Could not build tree: {}", e);
+            error!("Could not build tree: {e}");
             panic!("Trigger Rocket 500 error")
         }
     };
@@ -325,7 +325,7 @@ pub async fn client(
         Some(meta_data) => match serde_json::from_str::<ClientMetaData>(&meta_data) {
             Ok(meta_data) => meta_data,
             Err(e) => {
-                error!("Could not parse meta data: {}", e);
+                error!("Could not parse meta data: {e}");
                 ClientMetaData::default()
             }
         },
@@ -366,20 +366,20 @@ pub async fn augment(
         match general_purpose::URL_SAFE_NO_PAD.decode(name.as_bytes()) {
             Ok(name) => name,
             Err(e) => {
-                error!("Could not decode augmentation name: {}", e);
+                error!("Could not decode augmentation name: {e}");
                 return e.to_string();
             }
         },
     ) {
         Ok(name) => name,
         Err(e) => {
-            error!("Could not decode augmentation name: {}", e);
+            error!("Could not decode augmentation name: {e}");
             return e.to_string();
         }
     };
 
     if let Err(e) = client.add_augmentation(&name, prefix.into_inner()).await {
-        error!("Could not augment channel: {}", e);
+        error!("Could not augment channel: {e}");
         return e.to_string();
     }
 
@@ -392,20 +392,20 @@ pub async fn abridge(client: &State<Arc<AugmentationClient>>, name: &str) -> Str
         match general_purpose::URL_SAFE_NO_PAD.decode(name.as_bytes()) {
             Ok(name) => name,
             Err(e) => {
-                error!("Could not decode augmentation name: {}", e);
+                error!("Could not decode augmentation name: {e}");
                 return e.to_string();
             }
         },
     ) {
         Ok(name) => name,
         Err(e) => {
-            error!("Could not decode augmentation name: {}", e);
+            error!("Could not decode augmentation name: {e}");
             return e.to_string();
         }
     };
 
     if let Err(e) = client.remove_augmentation(&name).await {
-        error!("Could not remove augmentation: {}", e);
+        error!("Could not remove augmentation: {e}");
         return e.to_string();
     }
 
@@ -426,14 +426,14 @@ pub async fn change_prefix(
         match general_purpose::URL_SAFE_NO_PAD.decode(name.as_bytes()) {
             Ok(name) => name,
             Err(e) => {
-                error!("Could not decode augmentation name: {}", e);
+                error!("Could not decode augmentation name: {e}");
                 return e.to_string();
             }
         },
     ) {
         Ok(name) => name,
         Err(e) => {
-            error!("Could not decode augmentation name: {}", e);
+            error!("Could not decode augmentation name: {e}");
             return e.to_string();
         }
     };
@@ -442,7 +442,7 @@ pub async fn change_prefix(
         .change_augmentation_prefix(&name, prefix.into_inner())
         .await
     {
-        error!("Could not change augmentation prefix: {}", e);
+        error!("Could not change augmentation prefix: {e}");
         return e.to_string();
     }
 

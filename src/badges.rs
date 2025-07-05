@@ -5,6 +5,7 @@ use std::io::{Cursor, Read};
 
 use serde::{Deserialize, Serialize};
 
+#[allow(dead_code)]
 pub struct BadgesFile {
     pub badges: Vec<Badge>,
     pub last_change: u64,
@@ -142,8 +143,8 @@ impl From<std::string::FromUtf8Error> for ParseError {
 impl Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseError::Io(error) => write!(f, "{}", error),
-            ParseError::Utf8(error) => write!(f, "{}", error),
+            ParseError::Io(error) => write!(f, "{error}"),
+            ParseError::Utf8(error) => write!(f, "{error}"),
         }
     }
 }

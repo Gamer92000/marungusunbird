@@ -46,7 +46,7 @@ The configuration can be done by either using environment variables or mounting 
 ```toml
 # TeamSpeak Query
 host = "127.0.0.1"     # The IP address of the TeamSpeak server
-port = 10011           # The port of the Telnet Query interface
+port = 10022           # The port of the SSH Query interface
 user = "serveradmin"   # The username of the query user
 pass = "password"      # The password of the query user
 vsid = 1               # The virtual server ID to use

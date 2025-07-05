@@ -56,7 +56,7 @@ impl From<ClientListDynamicEntry> for Client {
             channel: client.base.channel_id,
             is_query: client.base.is_query,
             talk_power: client.voice.as_ref().map_or(0, |v| v.talk_power),
-            can_talk: client.voice.as_ref().map_or(false, |v| v.is_talker),
+            can_talk: client.voice.as_ref().is_some_and(|v| v.is_talker),
             badges: client.badges.map_or(vec![], |b| b.badges.badges),
             country: client.country.and_then(|c| {
                 c.country.map(|c| {
@@ -116,7 +116,7 @@ pub async fn init_badges() -> Result<(), Error> {
     for badge in badges {
         // pull each badge svg and store it in the assets folder
         let data = client
-            .get(&format!("{}.svg", badge.icon_url))
+            .get(format!("{}.svg", badge.icon_url))
             .send()
             .await?
             .bytes()
@@ -137,15 +137,15 @@ pub fn format_duration(seconds: i64) -> String {
 
     let mut result = String::new();
     if years > 0 {
-        result.push_str(&format!("{} y, ", years));
+        result.push_str(&format!("{years} y, "));
     }
     if weeks > 0 {
-        result.push_str(&format!("{} w, ", weeks));
+        result.push_str(&format!("{weeks} w, "));
     }
     if days > 0 {
-        result.push_str(&format!("{} d, ", days));
+        result.push_str(&format!("{days} d, "));
     }
-    result.push_str(&format!("{} h", hours));
+    result.push_str(&format!("{hours} h"));
 
     result
 }

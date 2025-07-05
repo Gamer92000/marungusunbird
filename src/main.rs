@@ -71,7 +71,7 @@ async fn main() {
     let client = match AugmentationClient::new().await {
         Ok(client) => client,
         Err(e) => {
-            error!("Could not connect to server: {}", e);
+            error!("Could not connect to server: {e}");
             return;
         }
     };
@@ -87,7 +87,7 @@ async fn main() {
                     match event_client.update_augmented_channels().await {
                         Ok(_) => {}
                         Err(e) => {
-                            error!("Could not update augmented channels: {}", e);
+                            error!("Could not update augmented channels: {e}");
                         }
                     }
                 }
@@ -105,7 +105,7 @@ async fn main() {
         .clone();
     let port = managed_client.config.lock().await.external.bind_port;
 
-    info!("Starting web server on {}:{}", addr, port);
+    info!("Starting web server on {addr}:{port}");
 
     // start web server
     let _ = rocket::build()

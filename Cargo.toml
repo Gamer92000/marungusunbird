@@ -34,3 +34,6 @@ chrono = "0.4.33"
 lazy_static = "1.4.0"
 base64 = "0.21.5"
 ron = "0.8.1"
+
+[patch."https://github.com/Brabb3l/ts3-query-api"]
+ts3-query-api = { git = "https://github.com/Gamer92000/ts3-query-api", branch = "dev" }

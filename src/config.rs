@@ -31,7 +31,7 @@ impl Default for ExternalConfig {
     fn default() -> ExternalConfig {
         ExternalConfig {
             host: "127.0.0.1".into(),
-            port: 10011,
+            port: 10022,
             user: "serveradmin".into(),
             pass: "password".into(),
             vsid: 1,

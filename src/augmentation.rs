@@ -67,14 +67,12 @@ impl AugmentationClient {
             config.external.host, config.external.port
         );
 
-        let client =
-            QueryClient::connect((config.external.host.clone(), config.external.port)).await?;
-
-        info!("Logging in as {}", config.external.user);
-
-        client
-            .login(&config.external.user, &config.external.pass)
-            .await?;
+        let client = QueryClient::connect(
+            (config.external.host.clone(), config.external.port),
+            &config.external.user,
+            &config.external.pass,
+        )
+        .await?;
 
         info!("Using virtual server {}", config.external.vsid);
 
@@ -168,7 +166,7 @@ impl AugmentationClient {
         &self,
         name: &str,
         properties: &[ChannelProperty],
-        permissions: &Vec<Permission>,
+        permissions: &[Permission],
     ) -> Result<i32, QueryError> {
         let mut properties = properties.to_vec();
         let mut icon = None;
@@ -185,7 +183,7 @@ impl AugmentationClient {
             self.client.channel_edit(channel, &[icon]).await?;
         }
 
-        debug!("Created channel {}", channel);
+        debug!("Created channel {channel}");
 
         if !permissions.is_empty() {
             self.client

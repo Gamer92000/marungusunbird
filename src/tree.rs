@@ -83,7 +83,7 @@ pub async fn build_tree(
         let channel = match channel_map.get(channel) {
             Some(channel) => channel,
             None => {
-                error!("Could not find channel with id {}", channel);
+                error!("Could not find channel with id {channel}");
                 continue;
             }
         };
