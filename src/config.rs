@@ -14,6 +14,10 @@ pub struct InternalConfig {
     pub last_badge_update: u64,
     #[serde(default)]
     pub afk_channel: Option<i32>,
+    /// Trust-on-first-use: SHA-256 fingerprint of the server host key learned on
+    /// the first connection. Persisted to `state.ron`; a later mismatch warns.
+    #[serde(default)]
+    pub server_fingerprint: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -25,6 +29,8 @@ pub struct ExternalConfig {
     pub vsid: i32,
     pub bind_addr: String,
     pub bind_port: u16,
+    #[serde(default)]
+    pub fingerprint: Option<String>,
 }
 
 impl Default for ExternalConfig {
@@ -37,6 +43,7 @@ impl Default for ExternalConfig {
             vsid: 1,
             bind_addr: "0.0.0.0".into(),
             bind_port: 8000,
+            fingerprint: None,
         }
     }
 }
@@ -49,9 +56,13 @@ pub struct Config {
 
 impl Config {
     fn read_internal_config() -> Result<InternalConfig, Error> {
-        // check if state.toml exists
+        // Load existing state if the file has parseable content. An empty file
+        // (e.g. created by `touch` before a bind mount) or unparseable content
+        // falls through to the default below instead of crashing.
         if let Ok(config_file) = fs::read_to_string("state.ron") {
-            return Ok(ron::from_str(&config_file)?);
+            if !config_file.trim().is_empty() {
+                return Ok(ron::from_str(&config_file)?);
+            }
         }
         // create empty config file
         fs::write(
@@ -61,6 +72,7 @@ impl Config {
                     augmentations: Vec::new(),
                     last_badge_update: 0,
                     afk_channel: None,
+                    server_fingerprint: None,
                 },
                 ron::ser::PrettyConfig::default(),
             )?,
@@ -69,6 +81,7 @@ impl Config {
             augmentations: Vec::new(),
             last_badge_update: 0,
             afk_channel: None,
+            server_fingerprint: None,
         })
     }
 
@@ -84,6 +97,7 @@ impl Config {
                     "VSID",
                     "BIND_ADDR",
                     "BIND_PORT",
+                    "FINGERPRINT",
                 ]))
                 .extract::<ExternalConfig>()?,
         )

@@ -15,6 +15,7 @@ mod badges;
 mod config;
 mod errors;
 mod helper;
+mod live;
 mod requests;
 mod rocket_errors;
 mod tree;
@@ -22,7 +23,7 @@ mod tree;
 use augmentation::AugmentationClient;
 use requests::{
     abridge, assets, augment, augmentation as augmentation_route, badge, change_prefix, channel,
-    client, favicon, tree as tree_route,
+    client, favicon, tree as tree_route, ws,
 };
 use rocket_errors::{internal_error, not_found};
 
@@ -81,17 +82,29 @@ async fn main() {
     info!("Successfully connected to TeamSpeak server query");
 
     tokio::spawn(async move {
-        while let Ok(event) = event_client.client.wait_for_event().await {
+        loop {
+            // Scope the read guard so it is released before a potential reconnect
+            // (which needs the write lock). Multiple readers — including web
+            // requests — can hold it concurrently while we wait for events.
+            let event = {
+                let client = event_client.client.read().await;
+                client.wait_for_event().await
+            };
             match event {
-                Event::ClientMoved(_) | Event::ClientEnterView(_) | Event::ClientLeftView(_) => {
-                    match event_client.update_augmented_channels().await {
-                        Ok(_) => {}
-                        Err(e) => {
-                            error!("Could not update augmented channels: {e}");
-                        }
+                Ok(Event::ClientMoved(_))
+                | Ok(Event::ClientEnterView(_))
+                | Ok(Event::ClientLeftView(_)) => {
+                    if let Err(e) = event_client.update_augmented_channels().await {
+                        error!("Could not update augmented channels: {e}");
                     }
                 }
-                _ => {}
+                Ok(_) => {}
+                Err(e) => {
+                    // Connection dropped (e.g. the TeamSpeak server restarted).
+                    // Reconnect, then resume waiting for events.
+                    error!("Event stream disconnected: {e}. Reconnecting...");
+                    event_client.reconnect().await;
+                }
             }
         }
     });
@@ -134,7 +147,8 @@ async fn main() {
                 badge,
                 channel,
                 client,
-                change_prefix
+                change_prefix,
+                ws
             ],
         )
         .register("/", catchers![internal_error, not_found])

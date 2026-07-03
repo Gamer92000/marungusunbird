@@ -31,6 +31,20 @@ If you want to use a configuration file, you can mount it to `/app/config.toml`:
 docker run -d --name sunbird -p "8000:8000" -v "/path/to/config.toml:/app/config.toml" ghcr.io/gamer92000/marungusunbird:latest
 ```
 
+The application keeps its state (registered augmentations, the learned server
+host-key fingerprint, ...) in `/app/state.ron`. Mount it to a persistent location
+so it survives container recreation — otherwise the SSH host key is re-trusted on
+every fresh start and the man-in-the-middle warning can never fire. Create the file
+first (`touch state.ron`); a single-file bind mount requires the host file to exist:
+
+```bash
+touch state.ron
+docker run -d --name sunbird -p "8000:8000" \
+  -v "/path/to/config.toml:/app/config.toml" \
+  -v "/path/to/state.ron:/app/state.ron" \
+  ghcr.io/gamer92000/marungusunbird:latest
+```
+
 <!-- docker compose -->
 Alternatively, you can use [Docker Compose](https://docs.docker.com/compose/). A sample [`docker-compose.yml`](docker-compose.yml) file is provided in the repository. To use it, run the following command:
 
@@ -50,6 +64,9 @@ port = 10022           # The port of the SSH Query interface
 user = "serveradmin"   # The username of the query user
 pass = "password"      # The password of the query user
 vsid = 1               # The virtual server ID to use
+# fingerprint = "SHA256:..." # Optional: pin the server host key (strict verification).
+                             # If unset, the key is trusted on first connection
+                             # (stored in state.ron) and a change triggers a warning.
 # Web interface
 bind_addr = "0.0.0.0"  # The IP address to bind the web server to
 bind_port = 8000       # The port to bind the web server to

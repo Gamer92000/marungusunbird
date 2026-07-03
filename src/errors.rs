@@ -21,4 +21,6 @@ pub enum Error {
     Reqwest(#[from] reqwest::Error),
     #[error("Badge parse error: {0}")]
     BadgeParse(#[from] crate::badges::ParseError),
+    #[error("Template render error: {0}")]
+    Template(#[from] rocket_dyn_templates::tera::Error),
 }

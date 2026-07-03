@@ -5,6 +5,12 @@ services:
     build: .
     ports:
       - "8000:8000"
+    volumes:
+      # Persist state (augmentations + learned SSH host-key fingerprint) across
+      # container recreation. Without this the fingerprint is relearned every start.
+      # Run `touch state.ron` first — a single-file bind mount needs the host file
+      # to exist, otherwise Docker creates a directory in its place.
+      - "./state.ron:/app/state.ron"
     environment:
       HOST: 127.0.0.1
       PORT: 10022

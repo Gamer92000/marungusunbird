@@ -2,6 +2,7 @@ use base64::{engine::general_purpose, Engine as _};
 use chrono::prelude::DateTime;
 use chrono::Utc;
 use log::{error, info};
+use rocket::futures::{SinkExt, StreamExt};
 use rocket::fs::NamedFile;
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
@@ -12,15 +13,90 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
+use tokio::sync::broadcast::error::RecvError;
 use ts3_query_api::definitions::Codec;
 
 use crate::augmentation::{AugmentationClient, AugmentationPrefix};
 use crate::helper::{format_duration, init_badges};
+use crate::live::render_tree_html;
 use crate::tree::build_tree;
 
 // ===============
 // ASSET endpoints
 // ===============
+
+/// Build the JSON snapshot pushed to WebSocket clients: current connection state
+/// plus the rendered tree HTML (empty while disconnected).
+async fn tree_snapshot(client: &AugmentationClient) -> String {
+    let (connected, tree_html) = if client.is_connected() {
+        let config = client.config.lock().await;
+        let built = build_tree(&*client.client.read().await, &config.internal.augmentations).await;
+        drop(config);
+        match built {
+            Ok(tree) => match render_tree_html(&tree) {
+                Ok(html) => (true, html),
+                Err(e) => {
+                    error!("Could not render tree fragment: {e}");
+                    (true, String::new())
+                }
+            },
+            // Reaching the server failed even though the flag says connected —
+            // treat it as down for display purposes.
+            Err(_) => (false, String::new()),
+        }
+    } else {
+        (false, String::new())
+    };
+
+    json!({ "connected": connected, "tree_html": tree_html }).to_string()
+}
+
+/// Live updates over a WebSocket: pushes a fresh snapshot on connect and whenever
+/// the tree or connection state changes. Replaces client-side polling.
+#[get("/ws")]
+pub fn ws(ws: rocket_ws::WebSocket, client: &State<Arc<AugmentationClient>>) -> rocket_ws::Channel<'static> {
+    let client = client.inner().clone();
+    ws.channel(move |mut stream| {
+        Box::pin(async move {
+            let mut updates = client.subscribe_updates();
+
+            // Initial snapshot so a freshly opened page renders immediately.
+            if stream
+                .send(rocket_ws::Message::Text(tree_snapshot(&client).await))
+                .await
+                .is_err()
+            {
+                return Ok(());
+            }
+
+            loop {
+                tokio::select! {
+                    // Client -> server: only care about close/errors to end the loop.
+                    incoming = stream.next() => match incoming {
+                        Some(Ok(rocket_ws::Message::Close(_))) | None => break,
+                        Some(Err(_)) => break,
+                        Some(Ok(_)) => {}
+                    },
+                    // Change notification -> push a new snapshot.
+                    recv = updates.recv() => match recv {
+                        Ok(()) | Err(RecvError::Lagged(_)) => {
+                            if stream
+                                .send(rocket_ws::Message::Text(tree_snapshot(&client).await))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                        Err(RecvError::Closed) => break,
+                    },
+                }
+            }
+
+            Ok(())
+        })
+    })
+}
 
 #[get("/badges/<badge>")]
 pub async fn badge(client: &State<Arc<AugmentationClient>>, badge: &str) -> Option<NamedFile> {
@@ -68,17 +144,30 @@ pub async fn favicon() -> Option<NamedFile> {
 
 #[get("/")]
 pub async fn tree(client: &State<Arc<AugmentationClient>>) -> Template {
+    // While the query connection is down, render the page with a banner instead of
+    // trying to reach the server (which would 500).
+    if !client.is_connected() {
+        return Template::render(
+            "index",
+            json!({ "connected": false, "name": "", "properties": [] }),
+        );
+    }
+
     let config = client.config.lock().await;
-    let tree = match build_tree(&client.client, &config.internal.augmentations).await {
+    let tree = match build_tree(&*client.client.read().await, &config.internal.augmentations).await {
         Ok(tree) => tree,
         Err(e) => {
             error!("Could not build tree: {e}");
-            panic!("Trigger Rocket 500 error")
+            drop(config);
+            return Template::render(
+                "index",
+                json!({ "connected": false, "name": "", "properties": [] }),
+            );
         }
     };
     drop(config);
 
-    let server = client.client.server_info().await.unwrap();
+    let server = client.client.read().await.server_info().await.unwrap();
 
     let created = UNIX_EPOCH + Duration::from_secs(server.created);
     // Create DateTime from SystemTime
@@ -89,6 +178,7 @@ pub async fn tree(client: &State<Arc<AugmentationClient>>) -> Template {
     Template::render(
         "index",
         json!({
+            "connected": true,
             "tree": tree,
             "name": server.name.to_string(),
             "properties": [
@@ -123,14 +213,15 @@ pub async fn channel(
     id: i32,
 ) -> Result<Template, Redirect> {
     let config = client.config.lock().await;
-    let tree = match build_tree(&client.client, &config.internal.augmentations).await {
+    let tree = match build_tree(&*client.client.read().await, &config.internal.augmentations).await {
         Ok(tree) => tree,
         Err(e) => {
+            // Connection down — send the user to the index, which shows the banner.
             error!("Could not build tree: {e}");
-            panic!("Trigger Rocket 500 error")
+            return Err(Redirect::to("/"));
         }
     };
-    let channel = match client.client.channel_info(id).await {
+    let channel = match client.client.read().await.channel_info(id).await {
         Ok(channel) => channel,
         Err(_) => return Err(Redirect::to("/")),
     };
@@ -155,6 +246,7 @@ pub async fn channel(
     Ok(Template::render(
         "channel",
         json!({
+            "connected": true,
             "tree": tree,
             "properties": [
                 {"name": "Topic", "value": channel.topic},
@@ -207,11 +299,12 @@ pub async fn augmentation(
     };
 
     let config = client.config.lock().await;
-    let tree = match build_tree(&client.client, &config.internal.augmentations).await {
+    let tree = match build_tree(&*client.client.read().await, &config.internal.augmentations).await {
         Ok(tree) => tree,
         Err(e) => {
+            // Connection down — send the user to the index, which shows the banner.
             error!("Could not build tree: {e}");
-            panic!("Trigger Rocket 500 error")
+            return Err(Redirect::to("/"));
         }
     };
     // get data for augmentation
@@ -226,6 +319,8 @@ pub async fn augmentation(
             // check if channel with name exists
             if let Some(channel) = client
                 .client
+                .read()
+                .await
                 .channel_list()
                 .await
                 .unwrap()
@@ -240,6 +335,8 @@ pub async fn augmentation(
     // find first channel of augmentation
     let channel = match client
         .client
+        .read()
+        .await
         .channel_list()
         .await
         .unwrap()
@@ -249,7 +346,7 @@ pub async fn augmentation(
         Some(c) => c.id,
         None => return Err(Redirect::to("/")),
     };
-    let channel = match client.client.channel_info(channel).await {
+    let channel = match client.client.read().await.channel_info(channel).await {
         Ok(channel) => channel,
         Err(_) => return Err(Redirect::to("/")),
     };
@@ -257,6 +354,7 @@ pub async fn augmentation(
     Ok(Template::render(
         "augmentation",
         json!({
+            "connected": true,
             "tree": tree,
             "properties": [
                 {"name": "Topic", "value": channel.topic},
@@ -297,15 +395,16 @@ pub async fn client(
     id: i32,
 ) -> Result<Template, Redirect> {
     let config = client.config.lock().await;
-    let tree = match build_tree(&client.client, &config.internal.augmentations).await {
+    let tree = match build_tree(&*client.client.read().await, &config.internal.augmentations).await {
         Ok(tree) => tree,
         Err(e) => {
+            // Connection down — send the user to the index, which shows the banner.
             error!("Could not build tree: {e}");
-            panic!("Trigger Rocket 500 error")
+            return Err(Redirect::to("/"));
         }
     };
     drop(config);
-    let client = match client.client.client_info(id).await {
+    let client = match client.client.read().await.client_info(id).await {
         Ok(client) => client,
         Err(_) => {
             return Err(Redirect::to("/"));
@@ -335,6 +434,7 @@ pub async fn client(
     Ok(Template::render(
         "client",
         json!({
+            "connected": true,
             "tree": tree,
             "properties": [
                 {"name": "Phonetic Name", "value": client.nickname_phonetic},
