@@ -3307,7 +3307,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "ts3-query-api"
 version = "0.2.0"
-source = "git+https://github.com/Gamer92000/ts3-query-api?branch=dev#e802694325cc84c7c66212afd1f813fb0e0f0550"
+source = "git+https://github.com/Gamer92000/ts3-query-api?branch=dev#c031dccaca02f953636bbd0ecfbf3621fe7867c7"
 dependencies = [
  "bytes",
  "env_logger 0.11.11",

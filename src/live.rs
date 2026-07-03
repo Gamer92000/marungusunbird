@@ -41,6 +41,8 @@ pub fn render_tree_html(tree: &Tree) -> Result<String, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::helper::{Channel, Client};
+    use std::cell::Cell;
     use std::collections::HashMap;
 
     #[test]
@@ -56,5 +58,40 @@ mod tests {
         let html = render_tree_html(&tree).expect("fragment renders");
         assert!(html.contains("tree_item server"));
         assert!(html.contains("Test Server"));
+    }
+
+    #[test]
+    fn renders_client_state_icon() {
+        let channel = Channel {
+            id: 1,
+            name: "General".to_string(),
+            parent_id: 0,
+            talk_power: 0,
+            is_augmented: false,
+            augmentation_id: None,
+            highlight_color: None,
+            indent_level: Cell::new(0),
+        };
+        let client = Client {
+            id: 5,
+            name: "Muted Mike".to_string(),
+            channel: 1,
+            is_query: false,
+            talk_power: 0,
+            can_talk: true,
+            state: "mic_muted",
+            badges: Vec::new(),
+            country: None,
+        };
+        let tree = Tree {
+            server_name: "S".to_string(),
+            channel_order: vec![1],
+            channel_map: HashMap::from([(1, channel)]),
+            clients: HashMap::from([(1, vec![client])]),
+        };
+        let html = render_tree_html(&tree).expect("fragment renders");
+        // The mute state must win over can_talk and render the dedicated icon.
+        assert!(html.contains("client_mic_muted.svg"));
+        assert!(!html.contains("client_talk.svg"));
     }
 }

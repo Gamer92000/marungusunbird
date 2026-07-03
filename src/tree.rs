@@ -61,6 +61,7 @@ pub async fn build_tree(
         .client_list_dynamic(
             ClientListFlags::default()
                 .with_voice()
+                .with_away()
                 .with_badges()
                 .with_groups()
                 .with_country(),

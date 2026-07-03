@@ -186,6 +186,12 @@ impl AugmentationClient {
         let _ = self.updates.send(());
     }
 
+    /// Public trigger to push a fresh tree to WebSocket clients, for server events
+    /// that change the tree without needing augmentation rebalancing.
+    pub fn request_update(&self) {
+        self.notify_update();
+    }
+
     pub async fn reconnect(&self) {
         self.connected.store(false, Ordering::Relaxed);
         self.notify_update();

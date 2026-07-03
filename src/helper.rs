@@ -29,6 +29,9 @@ pub struct Client {
     pub is_query: bool,
     pub talk_power: i32,
     pub can_talk: bool,
+    /// Voice status shown in the tree, highest priority first:
+    /// "afk" > "sound_muted" > "mic_muted" > "mic_disabled" > "normal".
+    pub state: &'static str,
     pub badges: Vec<String>,
     pub country: Option<String>,
 }
@@ -50,6 +53,26 @@ impl From<ChannelListDynamicEntry> for Channel {
 
 impl From<ClientListDynamicEntry> for Client {
     fn from(client: ClientListDynamicEntry) -> Self {
+        let away = client.away.as_ref().is_some_and(|a| a.away);
+        let (input_muted, output_muted, input_hardware) = client
+            .voice
+            .as_ref()
+            .map_or((false, false, true), |v| {
+                (v.input_muted, v.output_muted, v.input_hardware)
+            });
+        // Priority: afk > sound mute > mic mute > mic disabled.
+        let state = if away {
+            "afk"
+        } else if output_muted {
+            "sound_muted"
+        } else if input_muted {
+            "mic_muted"
+        } else if !input_hardware {
+            "mic_disabled"
+        } else {
+            "normal"
+        };
+
         Self {
             id: client.base.id,
             name: client.base.nickname,
@@ -57,6 +80,7 @@ impl From<ClientListDynamicEntry> for Client {
             is_query: client.base.is_query,
             talk_power: client.voice.as_ref().map_or(0, |v| v.talk_power),
             can_talk: client.voice.as_ref().is_some_and(|v| v.is_talker),
+            state,
             badges: client.badges.map_or(vec![], |b| b.badges.badges),
             country: client.country.and_then(|c| {
                 c.country.map(|c| {

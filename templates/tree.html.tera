@@ -78,6 +78,14 @@ href="/client/{{ client.id }}"
   <div class="wrapper">
     {% if client.is_query %}
     <img class="icon" src="/static/query.svg" width="22px" />
+    {% elif client.state == "afk" %}
+    <img class="icon" src="/static/client_afk.svg" width="22px" title="AFK" />
+    {% elif client.state == "sound_muted" %}
+    <img class="icon" src="/static/client_sound_muted.svg" width="22px" title="Sound muted" />
+    {% elif client.state == "mic_muted" %}
+    <img class="icon" src="/static/client_mic_muted.svg" width="22px" title="Microphone muted" />
+    {% elif client.state == "mic_disabled" %}
+    <img class="icon" src="/static/client_mic_disabled.svg" width="22px" title="Microphone disabled" />
     {% elif client.can_talk %}
     <img class="icon" src="/static/client_talk.svg" width="22px" />
     {% else %}

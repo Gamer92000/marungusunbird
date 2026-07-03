@@ -94,9 +94,20 @@ async fn main() {
                 Ok(Event::ClientMoved(_))
                 | Ok(Event::ClientEnterView(_))
                 | Ok(Event::ClientLeftView(_)) => {
+                    // Rebalances augmented channels and pushes a fresh tree.
                     if let Err(e) = event_client.update_augmented_channels().await {
                         error!("Could not update augmented channels: {e}");
                     }
+                }
+                Ok(Event::ClientUpdated(_))
+                | Ok(Event::ChannelCreated(_))
+                | Ok(Event::ChannelDeleted(_))
+                | Ok(Event::ChannelEdited(_))
+                | Ok(Event::ChannelMoved(_))
+                | Ok(Event::ChannelDescriptionChanged(_)) => {
+                    // Tree state changed (mute/afk toggle, channel edit, ...) but no
+                    // augmentation work needed — push a fresh tree to WebSocket clients.
+                    event_client.request_update();
                 }
                 Ok(_) => {}
                 Err(e) => {
