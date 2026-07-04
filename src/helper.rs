@@ -19,6 +19,84 @@ pub struct Channel {
     pub augmentation_id: Option<String>,
     pub highlight_color: Option<String>,
     pub indent_level: Cell<i32>,
+    /// Spacer metadata, present only for channels that are rendered as spacers
+    /// (top-level, permanent, name matching the TeamSpeak spacer pattern).
+    pub spacer: Option<Spacer>,
+}
+
+/// A parsed TeamSpeak channel spacer. Mirrors the classification the official
+/// TS6 client performs on the channel name (`templates/tree.html.tera` renders
+/// each variant). A spacer is a top-level, permanent channel whose name matches
+/// `^\[<align>spacer<id>]<content>`.
+#[derive(Serialize, Clone)]
+pub struct Spacer {
+    /// Horizontal alignment / fill mode: `"left"`, `"center"`, `"right"` or
+    /// `"repeat"`. Derived from the character(s) before `spacer` in the tag
+    /// (`c`/`r`/`l`/`*`); anything else defaults to `"left"`.
+    pub align: &'static str,
+    /// `true` for `[*spacer…]`: the content is repeated to fill the row width.
+    pub repeat: bool,
+    /// For non-repeat spacers whose content is exactly one of the reserved line
+    /// patterns, the stroke style to draw: `"solid"` (`___`), `"dash"` (`---`),
+    /// `"dot"` (`...`), `"dash-dot"` (`-.-`) or `"dash-dot-dot"` (`-..`). Empty
+    /// otherwise.
+    pub line: &'static str,
+    /// The display text: the channel name with the leading `[…spacer…]` tag
+    /// stripped. For repeat spacers this is the unit that gets tiled.
+    pub text: String,
+}
+
+impl Spacer {
+    /// Classify `name` as a spacer, or return `None` if it is an ordinary
+    /// channel. `top_level` and `permanent` are the two structural conditions
+    /// TeamSpeak also requires — only top-level permanent channels can be
+    /// spacers, everything else keeps its literal name.
+    pub fn parse(name: &str, top_level: bool, permanent: bool) -> Option<Spacer> {
+        lazy_static! {
+            // Group 1: the tag text before "spacer" (alignment marker).
+            // Group 2: everything after the closing bracket (the content).
+            static ref SPACER_RE: Regex = Regex::new(r"^\[([^\]]*)spacer[^\]]*\](.*)$").unwrap();
+        }
+        if !top_level || !permanent {
+            return None;
+        }
+        let caps = SPACER_RE.captures(name)?;
+        let marker = caps.get(1).map_or("", |m| m.as_str());
+        let content = caps.get(2).map_or("", |m| m.as_str());
+
+        let repeat = name.starts_with("[*");
+        let align = if repeat {
+            "repeat"
+        } else {
+            match marker {
+                "c" => "center",
+                "r" => "right",
+                "l" => "left",
+                _ => "left",
+            }
+        };
+        // A repeat spacer tiles its (usually single-character) content, so the
+        // reserved multi-character line patterns never apply to it.
+        let line = if repeat {
+            ""
+        } else {
+            match content {
+                "___" => "solid",
+                "---" => "dash",
+                "..." => "dot",
+                "-.-" => "dash-dot",
+                "-.." => "dash-dot-dot",
+                _ => "",
+            }
+        };
+
+        Some(Spacer {
+            align,
+            repeat,
+            line,
+            text: content.to_string(),
+        })
+    }
 }
 
 #[derive(Serialize, Clone)]
@@ -38,6 +116,8 @@ pub struct Client {
 
 impl From<ChannelListDynamicEntry> for Channel {
     fn from(channel: ChannelListDynamicEntry) -> Self {
+        let permanent = channel.flags.as_ref().is_some_and(|f| f.flag_permanent);
+        let spacer = Spacer::parse(&channel.base.name, channel.base.parent_id == 0, permanent);
         Self {
             id: channel.base.id,
             name: channel.base.name,
@@ -47,6 +127,7 @@ impl From<ChannelListDynamicEntry> for Channel {
             augmentation_id: None,
             highlight_color: None,
             indent_level: Cell::new(0),
+            spacer,
         }
     }
 }
@@ -95,21 +176,6 @@ impl From<ClientListDynamicEntry> for Client {
             }),
         }
     }
-}
-
-pub fn extract_spacer_name(
-    value: &Value,
-    _args: &HashMap<String, Value>,
-) -> Result<Value, rocket_dyn_templates::tera::Error> {
-    lazy_static! {
-        static ref SPACER_PREFIX: Regex = Regex::new(r"^\[c?spacer\]\s*").unwrap();
-    }
-
-    if let Value::String(value) = value {
-        return Ok(SPACER_PREFIX.replace(value, "").into());
-    }
-
-    Ok(value.clone())
 }
 
 pub fn base64_encode(
@@ -172,4 +238,74 @@ pub fn format_duration(seconds: i64) -> String {
     result.push_str(&format!("{hours} h"));
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Spacer;
+
+    fn parse(name: &str) -> Option<Spacer> {
+        // Every spacer on a real server is a top-level permanent channel.
+        Spacer::parse(name, true, true)
+    }
+
+    #[test]
+    fn non_spacer_channels_are_ignored() {
+        assert!(parse("General").is_none());
+        assert!(parse("╓─ Home Sweet Home I").is_none());
+        // The keyword alone is not a spacer tag.
+        assert!(parse("spacer stuff").is_none());
+    }
+
+    #[test]
+    fn requires_top_level_and_permanent() {
+        assert!(Spacer::parse("[cspacer]Internal", false, true).is_none());
+        assert!(Spacer::parse("[cspacer]Internal", true, false).is_none());
+    }
+
+    #[test]
+    fn alignment_markers() {
+        assert_eq!(parse("[spacer]hi").unwrap().align, "left");
+        assert_eq!(parse("[lspacer]hi").unwrap().align, "left");
+        assert_eq!(parse("[cspacer]Internal").unwrap().align, "center");
+        assert_eq!(parse("[rspacer]wtf").unwrap().align, "right");
+        assert_eq!(parse("[*spacer]-").unwrap().align, "repeat");
+    }
+
+    #[test]
+    fn text_is_stripped_of_tag() {
+        assert_eq!(parse("[cspacer]Welcome").unwrap().text, "Welcome");
+        assert_eq!(parse("[rspacer]wtf").unwrap().text, "wtf");
+        // Unique identifiers inside the tag are allowed and stripped.
+        assert_eq!(parse("[cspacer42] External").unwrap().text, " External");
+    }
+
+    #[test]
+    fn repeat_spacers() {
+        let s = parse("[*spacer]-").unwrap();
+        assert!(s.repeat);
+        assert_eq!(s.text, "-");
+        assert_eq!(s.line, "", "repeat spacers never draw a css line");
+        let u = parse("[*spacer]_").unwrap();
+        assert!(u.repeat);
+        assert_eq!(u.text, "_");
+    }
+
+    #[test]
+    fn line_spacers() {
+        assert_eq!(parse("[spacer]___").unwrap().line, "solid");
+        assert_eq!(parse("[spacer]---").unwrap().line, "dash");
+        assert_eq!(parse("[spacer]...").unwrap().line, "dot");
+        assert_eq!(parse("[spacer]-.-").unwrap().line, "dash-dot");
+        assert_eq!(parse("[spacer]-..").unwrap().line, "dash-dot-dot");
+        // Non-repeat line spacers keep their raw content as (unused) text.
+        assert!(!parse("[spacer]---").unwrap().repeat);
+    }
+
+    #[test]
+    fn plain_text_spacer_has_no_line() {
+        let s = parse("[cspacer]Internal").unwrap();
+        assert_eq!(s.line, "");
+        assert!(!s.repeat);
+    }
 }

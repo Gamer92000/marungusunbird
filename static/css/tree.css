@@ -1,9 +1,27 @@
+/* TeamSpeak 6 server-tree look. Palette lifted from the official client
+   (dark theme --tsv-* / --ts-tree-* custom properties). */
+#tree {
+  --tree-text: #e0e0e0;
+  --tree-subtitle: #697a97;
+  --tint: #1588fa;
+  --moderated: #fd6e35;
+  --chan-bg-start: #192031;
+  --chan-bg-end: #1c2539;
+  --spacer-from: #1e2538;
+  --spacer-to: #374263;
+  --header-from: #0b1124;
+  --header-to: #222c41;
+  --hover: #222a3c;
+  --line: #8f9fbb;
+}
+
 .tree_item {
   position: relative;
-  color: rgb(224, 224, 224);
-  height: 24px;
+  color: var(--tree-text);
+  height: 30px;
   user-select: none;
   display: block;
+  text-decoration: none;
 }
 
 .tree_item .segoe_fix {
@@ -14,71 +32,44 @@
   pointer-events: none;
 }
 
-.tree_item.spacer {
-  height: 20px;
-  font-style: italic;
-  color: rgb(105, 122, 151);
-}
-
-.tree_item.channel {
+.tree_item.channel,
+.tree_item.client,
+.tree_item.server {
   cursor: pointer;
 }
 
-.tree_item.server {
-  height: 28px;
-  margin-bottom: 4px;
-}
-
-.tree_item.server .segoe_fix {
-  --capital-height: 11.5;
-}
-
-.tree_item.center {
-  text-align: center;
-}
-
+/* ---- Shared pill layers ---- */
 .tree_item .background {
-  background: linear-gradient(
-    to right,
-    rgb(28, 37, 56) 0px,
-    rgb(19, 24, 36) 20px,
-    rgb(19, 24, 36) 30%,
-    rgb(28, 37, 56) 50%,
-    rgba(0, 0, 0, 0) 100%
-  );
-  top: 2px;
-  bottom: 2px;
-  width: 300px;
-  max-width: 100%;
   position: absolute;
+  top: 3px;
+  bottom: 3px;
   left: 10px;
-  border-radius: 4px;
-  top: 2px;
-  bottom: 2px;
+  right: 10px;
+  border-radius: 8px;
 }
 
 .tree_item .highlight {
   position: absolute;
-  top: 2px;
-  bottom: 2px;
+  top: 3px;
+  bottom: 3px;
   left: 10px;
   right: 10px;
-  border-radius: 4px;
+  border-radius: 8px;
   box-sizing: border-box;
 }
 
-.tree_item:hover .highlight {
-  background: rgb(28, 37, 56);
+.tree_item.channel:hover .highlight,
+.tree_item.client:hover .highlight {
+  background: var(--hover);
 }
 
 .tree_item .wrapper {
   position: absolute;
   height: 100%;
   padding-left: 20px;
-  padding-right: 10px;
+  padding-right: 20px;
   width: 100%;
   box-sizing: border-box;
-  cursor: default;
   display: flex;
   align-items: center;
   white-space: nowrap;
@@ -88,33 +79,102 @@
 .tree_item .wrapper .icon {
   transition: 0.1s ease-in-out;
   margin-right: 10px;
-}
-
-.tree_item.server:hover .wrapper .icon {
-  scale: 1.3;
+  flex-shrink: 0;
 }
 
 .tree_item .wrapper p.spread {
   width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* ---- Channels ---- */
+/* Full-width bar with a subtle left-to-right gradient (matches TS6). */
+.tree_item.channel .background {
+  background: linear-gradient(
+    to right,
+    var(--chan-bg-start),
+    var(--chan-bg-end)
+  );
+}
+
+/* ---- Server header card ---- */
+.tree_item.server {
+  height: 64px;
+  margin-bottom: 6px;
+}
+
+.tree_item.server .highlight {
+  top: 6px;
+  bottom: 6px;
+  left: 10px;
+  right: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(126, 145, 173, 0.18);
+  background: linear-gradient(115deg, var(--header-from), var(--header-to));
+}
+
+.tree_item.server .wrapper {
+  padding-left: 20px;
+  padding-right: 24px;
+}
+
+.tree_item.server .server_icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: rgba(126, 145, 173, 0.12);
+  margin-right: 14px;
+  flex-shrink: 0;
+}
+
+.tree_item.server .server_icon .icon {
+  margin: 0;
+  transition: 0.12s ease-in-out;
+}
+
+.tree_item.server:hover .server_icon .icon {
+  scale: 1.12;
+}
+
+.tree_item.server .name {
+  --capital-height: 15;
+  font-weight: 600;
+  color: #fff;
+}
+
+.tree_item.server .server_actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--tree-subtitle);
+  flex-shrink: 0;
+}
+
+/* ---- Moderated marker ---- */
 .tree_item .wrapper p.moderated {
-  padding: 0 7px;
+  padding: 0 8px;
   --capital-height: 8;
+  color: var(--tree-text);
+  font-weight: 500;
 }
 
+/* ---- Client badges / flags ---- */
 .tree_item .wrapper .icons {
   display: flex;
   align-items: center;
   gap: 4px;
   background: #1c2538;
-  border-radius: 4px;
-  padding: 0 7px;
+  border-radius: 100px;
+  padding: 2px 8px;
   height: 20px;
+  flex-shrink: 0;
 }
 
 .tree_item .wrapper .icons * {
-  /* line-height: 16px; */
   font-size: 16px;
 }
 
@@ -129,4 +189,94 @@
   height: 14px;
   background: #697a97;
   margin: 0 2px;
+}
+
+/* =====================================================================
+   Spacers — every TeamSpeak spacer type
+   ===================================================================== */
+.tree_item.spacer {
+  height: 28px;
+  cursor: default;
+}
+
+.tree_item.spacer .background {
+  background: linear-gradient(-115deg, var(--spacer-from), var(--spacer-to));
+}
+
+.tree_item.spacer .wrapper {
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+.tree_item.spacer p span {
+  color: var(--tree-text);
+}
+
+/* Text alignment: [spacer] left, [cspacer] center, [rspacer] right */
+.tree_item.spacer.left .wrapper {
+  justify-content: flex-start;
+}
+.tree_item.spacer.center .wrapper {
+  justify-content: center;
+}
+.tree_item.spacer.center p.spread,
+.tree_item.spacer.right p.spread {
+  width: auto;
+}
+.tree_item.spacer.right .wrapper {
+  justify-content: flex-end;
+}
+
+/* Repeat / fill spacer: [*spacer]<unit> — unit tiled across the row (tree.js) */
+.tree_item.spacer.repeat .fill {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--line);
+  letter-spacing: 0;
+}
+
+/* Line spacers: [spacer]___ / --- / ... / -.- / -.. drawn as a rule */
+.tree_item.spacer.line .wrapper {
+  padding: 0 18px;
+}
+
+.tree_item.spacer.line .rule {
+  display: block;
+  flex: 1 1 auto;
+  height: 2px;
+}
+
+.tree_item.spacer.line-solid .rule {
+  height: 0;
+  border-top: 2px solid var(--line);
+}
+.tree_item.spacer.line-dash .rule {
+  height: 0;
+  border-top: 2px dashed var(--line);
+}
+.tree_item.spacer.line-dot .rule {
+  height: 0;
+  border-top: 2.5px dotted var(--line);
+}
+.tree_item.spacer.line-dash-dot .rule {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--line) 0 11px,
+    transparent 11px 15px,
+    var(--line) 15px 17px,
+    transparent 17px 21px
+  );
+}
+.tree_item.spacer.line-dash-dot-dot .rule {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--line) 0 11px,
+    transparent 11px 15px,
+    var(--line) 15px 17px,
+    transparent 17px 19px,
+    var(--line) 19px 21px,
+    transparent 21px 25px
+  );
 }

@@ -1,5 +1,4 @@
 use env_logger::{fmt::Color, Builder, Env};
-use helper::extract_spacer_name;
 use lazy_static::lazy_static;
 use log::{error, info};
 use percent_encoding::{AsciiSet, CONTROLS};
@@ -141,9 +140,6 @@ async fn main() {
         .manage(managed_client)
         .attach(Template::custom(|engines| {
             // Add your custom filter to the Tera instance
-            engines
-                .tera
-                .register_filter("extract_spacer_name", extract_spacer_name);
             engines.tera.register_filter("base64_encode", base64_encode);
         }))
         .mount(

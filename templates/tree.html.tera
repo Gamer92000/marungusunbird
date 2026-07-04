@@ -5,18 +5,27 @@
 
 {% macro tree(tree) %}
   <a class="tree_item server" href="/">
-    <div class="background"></div>
     <div class="highlight"></div>
     <div class="wrapper">
-      <img class="icon" src="/static/server.svg" height="22px" />
-      <p class="segoe_fix spread">
+      <span class="server_icon">
+        <img class="icon" src="/static/server.svg" height="30px" />
+      </span>
+      <p class="segoe_fix spread name">
         <span>{{tree.server_name}}</span>
       </p>
+      <span class="server_actions">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path fill="currentColor" d="M7 3.5A2.5 2.5 0 0 0 4.5 6v14.1c0 .74.83 1.18 1.44.76L12 17.1l6.06 3.76c.61.42 1.44-.02 1.44-.76V6A2.5 2.5 0 0 0 17 3.5H7Z"/>
+        </svg>
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path fill="currentColor" d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8A2.5 2.5 0 0 1 17.5 16H9.8l-3.9 3.36c-.64.55-1.63.1-1.63-.75V5.5Z"/>
+        </svg>
+      </span>
     </div>
   </a>
   {% for cid in tree.channel_order -%}
     {% set channel = tree.channel_map[cid] -%}
-    {% if channel.name is matching("^\[c?spacer\].*") and channel.indent_level == 0 -%}
+    {% if channel.spacer -%}
       {{ self::spacer(channel=channel) }}
     {% else -%}
       {{ self::channel(channel=channel) }}
@@ -57,16 +66,21 @@
 {% endmacro channel %}
 
 {% macro spacer(channel) %}
-<a class="tree_item spacer{% if channel.name is matching("^\[cspacer\]") %} center{% endif %}"
-  href="/channel/{{ channel.id }}"
->
-  <div class="highlight"></div>
+{% set s = channel.spacer -%}
+<div class="tree_item spacer {{ s.align }}{% if s.line %} line line-{{ s.line }}{% endif %}">
+  <div class="background"></div>
   <div class="wrapper">
-    <p class="segoe_fix spread">
-      <span>{{ channel.name | extract_spacer_name }}</span>
-    </p>
+    {% if s.line and not s.repeat -%}
+      <span class="rule"></span>
+    {% elif s.repeat -%}
+      <span class="segoe_fix fill" data-unit="{{ s.text }}"><span>{{ s.text }}</span></span>
+    {% else -%}
+      <p class="segoe_fix spread">
+        <span>{{ s.text }}</span>
+      </p>
+    {% endif -%}
   </div>
-</a>
+</div>
 {% endmacro spacer %}
 
 {% macro client(client, indent) %}

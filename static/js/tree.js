@@ -1,3 +1,34 @@
+// Repeat/fill spacers ([*spacer]<unit>) tile their unit string across the whole
+// row. The final width is only known in the browser, so measure it here and
+// repeat the unit enough times to cover the row, re-running on resize and after
+// every live tree update.
+function fillRepeatSpacers(root) {
+  const scope = root || document;
+  const fills = scope.querySelectorAll(".tree_item.spacer.repeat .fill");
+  fills.forEach((el) => {
+    const unit = el.dataset.unit;
+    if (!unit) return;
+    const width = el.clientWidth;
+    if (!width) return;
+    // Measure one unit's rendered width using a detached clone.
+    const probe = el.cloneNode(false);
+    probe.style.position = "absolute";
+    probe.style.visibility = "hidden";
+    probe.style.width = "auto";
+    probe.style.whiteSpace = "pre";
+    probe.textContent = unit;
+    el.parentNode.appendChild(probe);
+    const unitWidth = probe.getBoundingClientRect().width || 1;
+    probe.remove();
+    const count = Math.ceil(width / unitWidth) + 2;
+    el.textContent = unit.repeat(count);
+  });
+}
+
+window.fillRepeatSpacers = fillRepeatSpacers;
+window.addEventListener("load", () => fillRepeatSpacers());
+window.addEventListener("resize", () => fillRepeatSpacers());
+
 async function augment(event) {
   event.preventDefault();
   let form = event.target;

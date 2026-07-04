@@ -3,7 +3,7 @@ use std::fs;
 use std::sync::OnceLock;
 
 use crate::errors::Error;
-use crate::helper::{base64_encode, extract_spacer_name};
+use crate::helper::base64_encode;
 use crate::tree::Tree;
 
 /// A standalone Tera instance for rendering just the channel tree to an HTML
@@ -24,7 +24,6 @@ fn tree_tera() -> &'static Tera {
             "{% import \"tree\" as t %}{{ t::tree(tree=tree) }}",
         )
         .expect("tree fragment parses");
-        tera.register_filter("extract_spacer_name", extract_spacer_name);
         tera.register_filter("base64_encode", base64_encode);
         tera
     })
@@ -71,6 +70,7 @@ mod tests {
             augmentation_id: None,
             highlight_color: None,
             indent_level: Cell::new(0),
+            spacer: None,
         };
         let client = Client {
             id: 5,

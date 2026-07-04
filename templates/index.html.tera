@@ -80,6 +80,21 @@
         }
       }
 
+      // Debounce showing the banner. A socket close fired while navigating away
+      // (clicking a tree item) would otherwise flash the banner on the outgoing
+      // page for one frame. Deferring the "disconnected" paint lets the page
+      // navigate away first; a genuine disconnect still outlives the delay.
+      // Reconnecting hides the banner immediately.
+      let bannerTimer;
+      function requestBanner(connected) {
+        clearTimeout(bannerTimer);
+        if (connected) {
+          setBanner(true);
+        } else {
+          bannerTimer = setTimeout(() => setBanner(false), 400);
+        }
+      }
+
       function applyTree(html) {
         const tree = document.getElementById("tree");
         if (!tree) return;
@@ -87,13 +102,21 @@
         if (window.twemoji) {
           twemoji.parse(tree, { folder: "svg", ext: ".svg" });
         }
+        if (window.fillRepeatSpacers) {
+          window.fillRepeatSpacers(tree);
+        }
       }
 
       // Set while the page is navigating away. Clicking a tree item triggers a
       // full page load, which closes the socket — without this guard onclose
       // would paint the banner on the outgoing page and flash it.
       let unloading = false;
-      window.addEventListener("pagehide", () => { unloading = true; });
+      function markUnloading() {
+        unloading = true;
+        clearTimeout(bannerTimer);
+      }
+      window.addEventListener("pagehide", markUnloading);
+      window.addEventListener("beforeunload", markUnloading);
 
       let socket;
       function connect() {
@@ -106,7 +129,8 @@
           } catch (e) {
             return;
           }
-          setBanner(data.connected);
+          if (unloading) return;
+          requestBanner(data.connected);
           if (data.connected && typeof data.tree_html === "string") {
             applyTree(data.tree_html);
           }
@@ -115,7 +139,7 @@
           // Ignore closes caused by navigating away from the page.
           if (unloading) return;
           // Web server itself went away — show the banner and retry the socket.
-          setBanner(false);
+          requestBanner(false);
           setTimeout(connect, 3000);
         };
         socket.onerror = () => socket.close();
