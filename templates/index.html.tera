@@ -89,6 +89,12 @@
         }
       }
 
+      // Set while the page is navigating away. Clicking a tree item triggers a
+      // full page load, which closes the socket — without this guard onclose
+      // would paint the banner on the outgoing page and flash it.
+      let unloading = false;
+      window.addEventListener("pagehide", () => { unloading = true; });
+
       let socket;
       function connect() {
         const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -106,6 +112,8 @@
           }
         };
         socket.onclose = () => {
+          // Ignore closes caused by navigating away from the page.
+          if (unloading) return;
           // Web server itself went away — show the banner and retry the socket.
           setBanner(false);
           setTimeout(connect, 3000);
