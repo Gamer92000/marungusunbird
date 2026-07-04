@@ -135,21 +135,23 @@ impl From<ChannelListDynamicEntry> for Channel {
 impl From<ClientListDynamicEntry> for Client {
     fn from(client: ClientListDynamicEntry) -> Self {
         let away = client.away.as_ref().is_some_and(|a| a.away);
-        let (input_muted, output_muted, input_hardware) = client
+        let (input_muted, output_muted, input_hardware, output_hardware) = client
             .voice
             .as_ref()
-            .map_or((false, false, true), |v| {
-                (v.input_muted, v.output_muted, v.input_hardware)
+            .map_or((false, false, true, true), |v| {
+                (v.input_muted, v.output_muted, v.input_hardware, v.output_hardware)
             });
-        // Priority: afk > sound mute > mic mute > mic disabled.
+        // Priority: afk > sound disabled > sound mute > mic disabled > mic mute.
         let state = if away {
             "afk"
+        } else if !output_hardware {
+            "sound_disabled"
         } else if output_muted {
             "sound_muted"
-        } else if input_muted {
-            "mic_muted"
         } else if !input_hardware {
             "mic_disabled"
+        } else if input_muted {
+            "mic_muted"
         } else {
             "normal"
         };
