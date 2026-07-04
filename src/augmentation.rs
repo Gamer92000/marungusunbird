@@ -8,12 +8,14 @@ use std::time::Duration;
 use std::vec;
 use strsim::jaro;
 use tokio::sync::{broadcast, Mutex, RwLock};
+use ts3_query_api::definitions::builder::ClientListFlags;
 use ts3_query_api::definitions::{ChannelListEntry, ChannelProperty};
 use ts3_query_api::definitions::{ClientProperty, Permission};
 use ts3_query_api::error::QueryError;
 use ts3_query_api::{HostKeyVerification, QueryClient};
 
 use crate::config::Config;
+use crate::helper::Client;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AugmentationPrefix {
@@ -190,6 +192,33 @@ impl AugmentationClient {
     /// that change the tree without needing augmentation rebalancing.
     pub fn request_update(&self) {
         self.notify_update();
+    }
+
+    /// Snapshot of every client's rendered mute/away state, sorted by id.
+    /// The query protocol does not push `notifyclientupdated` for mic/output
+    /// mute toggles to query clients, so this is polled and diffed to detect
+    /// changes the event stream misses. Returns `None` while disconnected or on
+    /// a query error so the caller keeps its previous snapshot.
+    pub async fn client_state_signature(&self) -> Option<Vec<(i32, &'static str)>> {
+        if !self.is_connected() {
+            return None;
+        }
+        let clients = {
+            let client = self.client.read().await;
+            client
+                .client_list_dynamic(ClientListFlags::default().with_voice().with_away())
+                .await
+                .ok()?
+        };
+        let mut sig: Vec<(i32, &'static str)> = clients
+            .into_iter()
+            .map(|c| {
+                let c = Client::from(c);
+                (c.id, c.state)
+            })
+            .collect();
+        sig.sort_unstable_by_key(|(id, _)| *id);
+        Some(sig)
     }
 
     pub async fn reconnect(&self) {

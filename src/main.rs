@@ -77,8 +77,26 @@ async fn main() {
     };
     let event_client = Arc::new(client);
     let managed_client = event_client.clone();
+    let poll_client = event_client.clone();
 
     info!("Successfully connected to TeamSpeak server query");
+
+    // The query protocol does not push mic/output mute-toggle updates
+    // (`notifyclientupdated`) to query clients, so the event stream never sees
+    // them. Poll client state and push a tree update only when it changes,
+    // capped at one poll every 500ms to bound query load.
+    tokio::spawn(async move {
+        let mut prev: Vec<(i32, &'static str)> = Vec::new();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            if let Some(sig) = poll_client.client_state_signature().await {
+                if sig != prev {
+                    prev = sig;
+                    poll_client.request_update();
+                }
+            }
+        }
+    });
 
     tokio::spawn(async move {
         loop {
