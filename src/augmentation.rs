@@ -2,7 +2,7 @@ use crate::errors::Error;
 use log::{debug, error, info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::Duration;
 use std::vec;
@@ -65,6 +65,13 @@ pub struct AugmentationClient {
     /// Whether the query connection is currently live. Read by the web UI to show
     /// a "disconnected" banner while a reconnect is in progress.
     connected: AtomicBool,
+    /// Incremented every time a fresh connection is swapped in. Failure observers
+    /// capture the epoch before using the connection and pass it to [`reconnect`],
+    /// so a stale failure report can't tear down a newer, healthy connection.
+    epoch: AtomicU64,
+    /// Serializes reconnect attempts so concurrent failure reports (event loop,
+    /// watchdog) result in a single reconnect.
+    reconnect_lock: Mutex<()>,
     /// Fires whenever the tree or connection state changes, so open WebSocket
     /// clients can be pushed a fresh snapshot. The payload is empty — receivers
     /// re-render the current state themselves.
@@ -170,12 +177,15 @@ impl AugmentationClient {
         Ok(())
     }
 
-    /// Re-establish the query connection after it dropped (e.g. the TeamSpeak
-    /// server restarted). Retries forever with capped backoff, then swaps in the
-    /// fresh client and resyncs augmentations.
     /// Whether the query connection is currently live.
     pub fn is_connected(&self) -> bool {
         self.connected.load(Ordering::Relaxed)
+    }
+
+    /// Current connection epoch. Capture before using the connection and pass to
+    /// [`reconnect`] when a failure is observed.
+    pub fn epoch(&self) -> u64 {
+        self.epoch.load(Ordering::Relaxed)
     }
 
     /// Subscribe to tree/connection-state change notifications (for WebSocket push).
@@ -197,18 +207,20 @@ impl AugmentationClient {
     /// Snapshot of every client's rendered mute/away state, sorted by id.
     /// The query protocol does not push `notifyclientupdated` for mic/output
     /// mute toggles to query clients, so this is polled and diffed to detect
-    /// changes the event stream misses. Returns `None` while disconnected or on
-    /// a query error so the caller keeps its previous snapshot.
-    pub async fn client_state_signature(&self) -> Option<Vec<(i32, &'static str)>> {
+    /// changes the event stream misses. Returns `Ok(None)` while disconnected;
+    /// query failures are surfaced so the poll loop can double as a connection
+    /// watchdog.
+    pub async fn client_state_signature(
+        &self,
+    ) -> Result<Option<Vec<(i32, &'static str)>>, QueryError> {
         if !self.is_connected() {
-            return None;
+            return Ok(None);
         }
         let clients = {
             let client = self.client.read().await;
             client
                 .client_list_dynamic(ClientListFlags::default().with_voice().with_away())
-                .await
-                .ok()?
+                .await?
         };
         let mut sig: Vec<(i32, &'static str)> = clients
             .into_iter()
@@ -218,10 +230,22 @@ impl AugmentationClient {
             })
             .collect();
         sig.sort_unstable_by_key(|(id, _)| *id);
-        Some(sig)
+        Ok(Some(sig))
     }
 
-    pub async fn reconnect(&self) {
+    /// Re-establish the query connection after it dropped (e.g. the TeamSpeak
+    /// server restarted). Retries forever with capped backoff, then swaps in the
+    /// fresh client and resyncs augmentations.
+    ///
+    /// `seen_epoch` is the value of [`epoch`] the caller captured before it
+    /// observed the failure: if the connection has been replaced since, the
+    /// report is stale and ignored. Concurrent calls are serialized; late
+    /// arrivals return once the connection is fresh again.
+    pub async fn reconnect(&self, seen_epoch: u64) {
+        let _guard = self.reconnect_lock.lock().await;
+        if self.epoch.load(Ordering::Relaxed) != seen_epoch {
+            return;
+        }
         self.connected.store(false, Ordering::Relaxed);
         self.notify_update();
         let mut backoff = 1u64;
@@ -237,6 +261,7 @@ impl AugmentationClient {
                     if let Err(e) = self.recover_all().await {
                         error!("Reconnected but augmentation recovery failed: {e}");
                     }
+                    self.epoch.fetch_add(1, Ordering::Relaxed);
                     self.connected.store(true, Ordering::Relaxed);
                     self.notify_update();
                     info!("Reconnected to TeamSpeak server query");
@@ -260,6 +285,8 @@ impl AugmentationClient {
             client: RwLock::new(client),
             config: Mutex::new(config),
             connected: AtomicBool::new(true),
+            epoch: AtomicU64::new(0),
+            reconnect_lock: Mutex::new(()),
             updates: broadcast::channel(16).0,
         };
 

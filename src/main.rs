@@ -7,6 +7,7 @@ use rocket::{catchers, routes};
 use rocket_dyn_templates::Template;
 use std::io::Write;
 use std::sync::Arc;
+use ts3_query_api::error::QueryError;
 use ts3_query_api::event::Event;
 
 mod augmentation;
@@ -85,14 +86,47 @@ async fn main() {
     // (`notifyclientupdated`) to query clients, so the event stream never sees
     // them. Poll client state and push a tree update only when it changes,
     // capped at one poll every 500ms to bound query load.
+    //
+    // The poll doubles as a connection watchdog: the event loop below only
+    // notices a dead connection when `wait_for_event` errors, which the library
+    // cannot guarantee for every failure mode (observed: connection dead for
+    // hours while the event stream stayed silent). A transport-level error or a
+    // hung query here triggers the reconnect instead.
     tokio::spawn(async move {
         let mut prev: Vec<(i32, &'static str)> = Vec::new();
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-            if let Some(sig) = poll_client.client_state_signature().await {
-                if sig != prev {
-                    prev = sig;
-                    poll_client.request_update();
+            let epoch = poll_client.epoch();
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                poll_client.client_state_signature(),
+            )
+            .await
+            {
+                Ok(Ok(Some(sig))) => {
+                    if sig != prev {
+                        prev = sig;
+                        poll_client.request_update();
+                    }
+                }
+                // Disconnected; the reconnect loop is already running.
+                Ok(Ok(None)) => {}
+                Ok(Err(
+                    e @ (QueryError::ConnectionClosed
+                    | QueryError::Timeout
+                    | QueryError::ReadError(_)
+                    | QueryError::WriteError(_)
+                    | QueryError::SshError(_)),
+                )) => {
+                    error!("Watchdog: query connection is dead ({e}). Reconnecting...");
+                    poll_client.reconnect(epoch).await;
+                }
+                // Server-side query errors (permissions, ...) don't imply a dead
+                // connection — log and keep polling.
+                Ok(Err(e)) => error!("Could not poll client state: {e}"),
+                Err(_) => {
+                    error!("Watchdog: query hung for 10s. Reconnecting...");
+                    poll_client.reconnect(epoch).await;
                 }
             }
         }
@@ -100,12 +134,24 @@ async fn main() {
 
     tokio::spawn(async move {
         loop {
+            let epoch = event_client.epoch();
             // Scope the read guard so it is released before a potential reconnect
-            // (which needs the write lock). Multiple readers — including web
-            // requests — can hold it concurrently while we wait for events.
+            // (which needs the write lock). The wait is additionally bounded so
+            // the guard is dropped periodically — otherwise a watchdog-triggered
+            // reconnect could never acquire the write lock while this task waits
+            // on a silent, dead connection. Timing out and re-looping loses no
+            // events: they stay buffered in the receiver channel.
             let event = {
                 let client = event_client.client.read().await;
-                client.wait_for_event().await
+                match tokio::time::timeout(
+                    std::time::Duration::from_secs(2),
+                    client.wait_for_event(),
+                )
+                .await
+                {
+                    Ok(event) => event,
+                    Err(_) => continue,
+                }
             };
             match event {
                 Ok(Event::ClientMoved(_))
@@ -131,7 +177,7 @@ async fn main() {
                     // Connection dropped (e.g. the TeamSpeak server restarted).
                     // Reconnect, then resume waiting for events.
                     error!("Event stream disconnected: {e}. Reconnecting...");
-                    event_client.reconnect().await;
+                    event_client.reconnect(epoch).await;
                 }
             }
         }
