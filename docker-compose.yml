@@ -3,6 +3,7 @@ version: "3"
 services:
   marungusunbird:
     build: .
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:

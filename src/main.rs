@@ -23,7 +23,7 @@ mod tree;
 use augmentation::AugmentationClient;
 use requests::{
     abridge, assets, augment, augmentation as augmentation_route, badge, change_prefix, channel,
-    client, favicon, tree as tree_route, ws,
+    client, favicon, health, tree as tree_route, ws,
 };
 use rocket_errors::{internal_error, not_found};
 
@@ -216,6 +216,7 @@ async fn main() {
                 tree_route,
                 favicon,
                 badge,
+                health,
                 channel,
                 client,
                 change_prefix,

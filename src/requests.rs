@@ -4,6 +4,7 @@ use chrono::Utc;
 use log::{error, info};
 use rocket::futures::{SinkExt, StreamExt};
 use rocket::fs::NamedFile;
+use rocket::http::Status;
 use rocket::response::Redirect;
 use rocket::serde::json::Json;
 use rocket::{get, post, State};
@@ -96,6 +97,20 @@ pub fn ws(ws: rocket_ws::WebSocket, client: &State<Arc<AugmentationClient>>) -> 
             Ok(())
         })
     })
+}
+
+/// Health probe for container orchestration and external monitoring: 200 while
+/// the query connection is live, 503 while it is down or reconnecting. The
+/// `connected` flag is kept honest by the watchdog poll (a dead or hung
+/// connection flips it within ~10s), so this check is cheap enough to poll
+/// frequently — it performs no query itself.
+#[get("/health")]
+pub fn health(client: &State<Arc<AugmentationClient>>) -> (Status, &'static str) {
+    if client.is_connected() {
+        (Status::Ok, "ok")
+    } else {
+        (Status::ServiceUnavailable, "query connection down")
+    }
 }
 
 #[get("/badges/<badge>")]
