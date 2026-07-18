@@ -3,7 +3,7 @@ use log::{debug, error, info, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use std::vec;
 use strsim::jaro;
@@ -16,6 +16,11 @@ use ts3_query_api::{HostKeyVerification, QueryClient};
 
 use crate::config::Config;
 use crate::helper::Client;
+
+/// Upper bound for one connection attempt (TCP connect, SSH handshake, auth,
+/// server selection). Without it a wedged handshake would hang `reconnect`
+/// forever while it holds the config lock.
+const ESTABLISH_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct AugmentationPrefix {
@@ -60,7 +65,10 @@ impl Augmentation {
 pub struct AugmentationClient {
     /// Behind an `RwLock` so the connection can be swapped out on reconnect while
     /// the shared `Arc<AugmentationClient>` (held by the web server) stays valid.
-    pub client: RwLock<QueryClient>,
+    /// Holds an `Arc` so users clone the handle out via [`query_client`] instead
+    /// of holding the read guard across queries — a hung query must never be
+    /// able to block the reconnect swap (which needs the write lock).
+    client: RwLock<Arc<QueryClient>>,
     pub config: Mutex<Config>,
     /// Whether the query connection is currently live. Read by the web UI to show
     /// a "disconnected" banner while a reconnect is in progress.
@@ -182,6 +190,15 @@ impl AugmentationClient {
         self.connected.load(Ordering::Relaxed)
     }
 
+    /// Clone the current query-client handle out of the lock. The read guard is
+    /// held only for the clone — never across a query — so no request can block
+    /// the reconnect swap. Callers keep the returned `Arc` for the duration of
+    /// one operation and re-fetch it afterwards, so they pick up a swapped-in
+    /// fresh connection.
+    pub async fn query_client(&self) -> Arc<QueryClient> {
+        self.client.read().await.clone()
+    }
+
     /// Current connection epoch. Capture before using the connection and pass to
     /// [`reconnect`] when a failure is observed.
     pub fn epoch(&self) -> u64 {
@@ -217,7 +234,7 @@ impl AugmentationClient {
             return Ok(None);
         }
         let clients = {
-            let client = self.client.read().await;
+            let client = self.query_client().await;
             client
                 .client_list_dynamic(ClientListFlags::default().with_voice().with_away())
                 .await?
@@ -252,12 +269,15 @@ impl AugmentationClient {
         loop {
             let result = {
                 let mut config = self.config.lock().await;
-                Self::establish(&mut config).await
+                match tokio::time::timeout(ESTABLISH_TIMEOUT, Self::establish(&mut config)).await {
+                    Ok(result) => result,
+                    Err(_) => Err(Error::Query(QueryError::Timeout)),
+                }
             };
 
             match result {
                 Ok(client) => {
-                    *self.client.write().await = client;
+                    *self.client.write().await = Arc::new(client);
                     if let Err(e) = self.recover_all().await {
                         error!("Reconnected but augmentation recovery failed: {e}");
                     }
@@ -279,10 +299,15 @@ impl AugmentationClient {
     pub async fn new() -> Result<Self, Error> {
         let mut config = Config::read_config()?;
 
-        let client = Self::establish(&mut config).await?;
+        // Bounded like the reconnect path: a wedged first connection should fail
+        // startup (and let the container restart policy retry) instead of
+        // hanging silently.
+        let client = tokio::time::timeout(ESTABLISH_TIMEOUT, Self::establish(&mut config))
+            .await
+            .map_err(|_| Error::Query(QueryError::Timeout))??;
 
         let ret = Self {
-            client: RwLock::new(client),
+            client: RwLock::new(Arc::new(client)),
             config: Mutex::new(config),
             connected: AtomicBool::new(true),
             epoch: AtomicU64::new(0),
@@ -308,7 +333,7 @@ impl AugmentationClient {
         drop(config);
 
         // find potential augmentations managed by another instance
-        let channels = ret.client.read().await.channel_list().await?;
+        let channels = ret.query_client().await.channel_list().await?;
         let pot_augmentation_regex = Regex::new(r"^.*[IVXLCDM]+$")?;
 
         // group channel by string similarity
@@ -376,16 +401,16 @@ impl AugmentationClient {
             icon = Some(properties.remove(index));
         }
 
-        let channel = self.client.read().await.channel_create(name, &properties).await?;
+        let channel = self.query_client().await.channel_create(name, &properties).await?;
 
         if let Some(icon) = icon {
-            self.client.read().await.channel_edit(channel, &[icon]).await?;
+            self.query_client().await.channel_edit(channel, &[icon]).await?;
         }
 
         debug!("Created channel {channel}");
 
         if !permissions.is_empty() {
-            self.client.read().await
+            self.query_client().await
                 .channel_add_perm_multiple(channel, permissions)
                 .await?;
         }
@@ -404,7 +429,7 @@ impl AugmentationClient {
             _ => true,
         });
         if !properties.is_empty() {
-            self.client.read().await.channel_edit(channel.id, &properties).await?;
+            self.query_client().await.channel_edit(channel.id, &properties).await?;
         }
         Ok(())
     }
@@ -431,7 +456,7 @@ impl AugmentationClient {
     }
 
     pub async fn update_augmented_channels(&self) -> Result<(), QueryError> {
-        let channels = self.client.read().await.channel_list().await?;
+        let channels = self.query_client().await.channel_list().await?;
         for augmentation in self.config.lock().await.internal.augmentations.iter() {
             // ensure there is always exactly one empty channel with the name
             // "<channel> <n>", where <n> is a roman numeral
@@ -474,7 +499,7 @@ impl AugmentationClient {
                 if empty_channels[0].id
                     == augmentation_instances[augmentation_instances.len() - 2].id
                 {
-                    self.client.read().await
+                    self.query_client().await
                         .channel_delete(empty_channels[empty_channels.len() - 1].id, false)
                         .await?;
                     // rename empty channel to have the last prefix
@@ -490,7 +515,7 @@ impl AugmentationClient {
                     .await?;
                 } else {
                     // delete the empty channel
-                    self.client.read().await
+                    self.query_client().await
                         .channel_delete(empty_channels[0].id, false)
                         .await?;
                     // move the pre to last (presumably non empty) channel to the empty channel
@@ -502,7 +527,7 @@ impl AugmentationClient {
                         0..augmentation.prefix.middle.len(),
                         &augmentation.prefix.last,
                     );
-                    self.client.read().await
+                    self.query_client().await
                         .channel_edit(
                             augmentation_instances[augmentation_instances.len() - 2].id,
                             &[
@@ -512,7 +537,7 @@ impl AugmentationClient {
                         )
                         .await?;
                     // rename the last (presumably empty) channel
-                    self.client.read().await
+                    self.query_client().await
                         .channel_edit(
                             augmentation_instances[augmentation_instances.len() - 1].id,
                             &[ChannelProperty::Name(replacement_name)],
@@ -568,14 +593,14 @@ impl AugmentationClient {
             } else {
                 // move all clients from the last channel to the empty channel
                 // get all clients from the last channel
-                let clients = self.client.read().await.client_list().await?;
+                let clients = self.query_client().await.client_list().await?;
                 let clients = clients
                     .into_iter()
                     .filter(|c| c.channel_id == augmentation_instances.last().unwrap().id)
                     .map(|c| c.id)
                     .collect::<Vec<_>>();
                 // move all clients to the empty channel
-                self.client.read().await
+                self.query_client().await
                     .client_move(&clients, empty_channels[0].id, None, true)
                     .await?;
             }
@@ -588,7 +613,7 @@ impl AugmentationClient {
     }
 
     pub async fn recover_augmentation(&self, augmentation: &Augmentation) -> Result<(), Error> {
-        let channels = self.client.read().await.channel_list().await?;
+        let channels = self.query_client().await.channel_list().await?;
 
         let augmentation_instances = self.get_augmentation_instances(augmentation, &channels);
 
@@ -619,7 +644,7 @@ impl AugmentationClient {
         let mut remaining_channels = augmentation_instances.clone();
         if empty_channels.len() > offset {
             for channel in empty_channels[..empty_channels.len() - offset].iter() {
-                self.client.read().await.channel_delete(channel.id, false).await?;
+                self.query_client().await.channel_delete(channel.id, false).await?;
                 remaining_channels.retain(|c| c.id != channel.id);
             }
         }
@@ -653,14 +678,14 @@ impl AugmentationClient {
                 != augmentation_instances.last().unwrap().id
             {
                 // get all clients from the last channel
-                let clients = self.client.read().await.client_list().await?;
+                let clients = self.query_client().await.client_list().await?;
                 let clients = clients
                     .into_iter()
                     .filter(|c| c.id == augmentation_instances.last().unwrap().id)
                     .map(|c| c.id)
                     .collect::<Vec<_>>();
                 // move all clients to the empty channel
-                self.client.read().await
+                self.query_client().await
                     .client_move(
                         &clients,
                         empty_channels[empty_channels.len() - 1].id,
@@ -739,7 +764,7 @@ impl AugmentationClient {
             return Err(Error::NotFound);
         }
 
-        let channels = self.client.read().await.channel_list().await?;
+        let channels = self.query_client().await.channel_list().await?;
         // find a channel with the name <identifier>
         let channel = channels
             .iter()
@@ -747,13 +772,13 @@ impl AugmentationClient {
             .ok_or(Error::NotFound)?;
 
         // find all permissions of the channel
-        let permissions = self.client.read().await.channel_perm_list(channel.id).await?;
+        let permissions = self.query_client().await.channel_perm_list(channel.id).await?;
         let mut permissions = permissions.into_iter().map(|p| p.perm).collect::<Vec<_>>();
         permissions.push(Permission::i_channel_needed_modify_power(100));
         permissions.push(Permission::i_channel_needed_permission_modify_power(100));
 
         // find all channel properties
-        let info = self.client.read().await.channel_info(channel.id).await?;
+        let info = self.query_client().await.channel_info(channel.id).await?;
         let mut properties = info.to_properties_vec();
         properties.retain(|p| {
             !matches!(
@@ -773,7 +798,7 @@ impl AugmentationClient {
             ))],
         )
         .await?;
-        self.client.read().await
+        self.query_client().await
             .channel_add_perm_multiple(
                 channel.id,
                 &[
@@ -815,10 +840,10 @@ impl AugmentationClient {
     pub async fn remove_augmentation(&self, identifier: &str) -> Result<(), Error> {
         let mut augmentation = self.config.lock().await;
         let augmentation = augmentation.remove_augmentation(identifier)?;
-        let channels = self.client.read().await.channel_list().await?;
+        let channels = self.query_client().await.channel_list().await?;
         let augmentation_instances = self.get_augmentation_instances(&augmentation, &channels);
         // move all users to the first channel
-        let clients = self.client.read().await.client_list().await?;
+        let clients = self.query_client().await.client_list().await?;
         let clients = clients
             .into_iter()
             .filter(|c| {
@@ -829,13 +854,13 @@ impl AugmentationClient {
             .map(|c| c.id)
             .collect::<Vec<_>>();
         if !clients.is_empty() {
-            self.client.read().await
+            self.query_client().await
                 .client_move(&clients, augmentation_instances[0].id, None, true)
                 .await?;
         }
         // delete all other channels
         for channel in augmentation_instances[1..].iter() {
-            self.client.read().await.channel_delete(channel.id, false).await?;
+            self.query_client().await.channel_delete(channel.id, false).await?;
         }
         // rename the first channel
         self.change_properties(
@@ -843,7 +868,7 @@ impl AugmentationClient {
             vec![ChannelProperty::Name(identifier.to_string())],
         )
         .await?;
-        self.client.read().await
+        self.query_client().await
             .channel_add_perm_multiple(
                 augmentation_instances[0].id,
                 &[
@@ -873,7 +898,7 @@ impl AugmentationClient {
             Some(a) => a,
             None => return Err(Error::NotFound),
         };
-        let channels = self.client.read().await.channel_list().await?;
+        let channels = self.query_client().await.channel_list().await?;
         let augmentation_instances = self.get_augmentation_instances(augmentation, &channels);
         // rename all channels
         for (i, channel) in augmentation_instances.iter().enumerate() {

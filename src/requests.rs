@@ -16,11 +16,29 @@ use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 use tokio::sync::broadcast::error::RecvError;
 use ts3_query_api::definitions::Codec;
+use ts3_query_api::error::QueryError;
+use ts3_query_api::QueryClient;
 
-use crate::augmentation::{AugmentationClient, AugmentationPrefix};
+use crate::augmentation::{Augmentation, AugmentationClient, AugmentationPrefix};
+use crate::errors::Error;
 use crate::helper::{format_duration, init_badges};
 use crate::live::render_tree_html;
-use crate::tree::build_tree;
+use crate::tree::{build_tree, Tree};
+
+/// Upper bound for building the channel tree in request handlers. A stalled
+/// query connection must not park handlers (and the old client handle they
+/// hold, which keeps its background task alive) indefinitely.
+const QUERY_TIMEOUT: Duration = Duration::from_secs(15);
+
+async fn build_tree_bounded(
+    client: &QueryClient,
+    augmentations: &[Augmentation],
+) -> Result<Tree, Error> {
+    match tokio::time::timeout(QUERY_TIMEOUT, build_tree(client, augmentations)).await {
+        Ok(result) => result,
+        Err(_) => Err(Error::Query(QueryError::Timeout)),
+    }
+}
 
 // ===============
 // ASSET endpoints
@@ -31,7 +49,7 @@ use crate::tree::build_tree;
 async fn tree_snapshot(client: &AugmentationClient) -> String {
     let (connected, tree_html) = if client.is_connected() {
         let config = client.config.lock().await;
-        let built = build_tree(&*client.client.read().await, &config.internal.augmentations).await;
+        let built = build_tree_bounded(&*client.query_client().await, &config.internal.augmentations).await;
         drop(config);
         match built {
             Ok(tree) => match render_tree_html(&tree) {
@@ -169,7 +187,7 @@ pub async fn tree(client: &State<Arc<AugmentationClient>>) -> Template {
     }
 
     let config = client.config.lock().await;
-    let tree = match build_tree(&*client.client.read().await, &config.internal.augmentations).await {
+    let tree = match build_tree_bounded(&*client.query_client().await, &config.internal.augmentations).await {
         Ok(tree) => tree,
         Err(e) => {
             error!("Could not build tree: {e}");
@@ -182,7 +200,18 @@ pub async fn tree(client: &State<Arc<AugmentationClient>>) -> Template {
     };
     drop(config);
 
-    let server = client.client.read().await.server_info().await.unwrap();
+    // The connection can die between build_tree above and this query — degrade
+    // to the disconnected banner instead of panicking the handler.
+    let server = match client.query_client().await.server_info().await {
+        Ok(server) => server,
+        Err(e) => {
+            error!("Could not fetch server info: {e}");
+            return Template::render(
+                "index",
+                json!({ "connected": false, "name": "", "properties": [] }),
+            );
+        }
+    };
 
     let created = UNIX_EPOCH + Duration::from_secs(server.created);
     // Create DateTime from SystemTime
@@ -227,8 +256,13 @@ pub async fn channel(
     client: &State<Arc<AugmentationClient>>,
     id: i32,
 ) -> Result<Template, Redirect> {
+    // While disconnected, go straight to the index (which shows the banner)
+    // instead of queueing on the config lock a reconnect may be holding.
+    if !client.is_connected() {
+        return Err(Redirect::to("/"));
+    }
     let config = client.config.lock().await;
-    let tree = match build_tree(&*client.client.read().await, &config.internal.augmentations).await {
+    let tree = match build_tree_bounded(&*client.query_client().await, &config.internal.augmentations).await {
         Ok(tree) => tree,
         Err(e) => {
             // Connection down — send the user to the index, which shows the banner.
@@ -236,7 +270,7 @@ pub async fn channel(
             return Err(Redirect::to("/"));
         }
     };
-    let channel = match client.client.read().await.channel_info(id).await {
+    let channel = match client.query_client().await.channel_info(id).await {
         Ok(channel) => channel,
         Err(_) => return Err(Redirect::to("/")),
     };
@@ -297,6 +331,11 @@ pub async fn augmentation(
     client: &State<Arc<AugmentationClient>>,
     name: String,
 ) -> Result<Template, Redirect> {
+    // While disconnected, go straight to the index (which shows the banner)
+    // instead of queueing on the config lock a reconnect may be holding.
+    if !client.is_connected() {
+        return Err(Redirect::to("/"));
+    }
     let name = match String::from_utf8(
         match general_purpose::URL_SAFE_NO_PAD.decode(name.as_bytes()) {
             Ok(name) => name,
@@ -314,7 +353,7 @@ pub async fn augmentation(
     };
 
     let config = client.config.lock().await;
-    let tree = match build_tree(&*client.client.read().await, &config.internal.augmentations).await {
+    let tree = match build_tree_bounded(&*client.query_client().await, &config.internal.augmentations).await {
         Ok(tree) => tree,
         Err(e) => {
             // Connection down — send the user to the index, which shows the banner.
@@ -332,36 +371,26 @@ pub async fn augmentation(
         Some(a) => a,
         None => {
             // check if channel with name exists
-            if let Some(channel) = client
-                .client
-                .read()
-                .await
-                .channel_list()
-                .await
-                .unwrap()
-                .iter()
-                .find(|c| c.name == name)
-            {
+            let channels = match client.query_client().await.channel_list().await {
+                Ok(channels) => channels,
+                Err(_) => return Err(Redirect::to("/")),
+            };
+            if let Some(channel) = channels.iter().find(|c| c.name == name) {
                 return Err(Redirect::to(format!("/channel/{}", channel.id)));
             }
             return Err(Redirect::to("/"));
         }
     };
     // find first channel of augmentation
-    let channel = match client
-        .client
-        .read()
-        .await
-        .channel_list()
-        .await
-        .unwrap()
-        .iter()
-        .find(|c| augmentation.is_instance(&c.name))
-    {
+    let channels = match client.query_client().await.channel_list().await {
+        Ok(channels) => channels,
+        Err(_) => return Err(Redirect::to("/")),
+    };
+    let channel = match channels.iter().find(|c| augmentation.is_instance(&c.name)) {
         Some(c) => c.id,
         None => return Err(Redirect::to("/")),
     };
-    let channel = match client.client.read().await.channel_info(channel).await {
+    let channel = match client.query_client().await.channel_info(channel).await {
         Ok(channel) => channel,
         Err(_) => return Err(Redirect::to("/")),
     };
@@ -409,8 +438,13 @@ pub async fn client(
     client: &State<Arc<AugmentationClient>>,
     id: i32,
 ) -> Result<Template, Redirect> {
+    // While disconnected, go straight to the index (which shows the banner)
+    // instead of queueing on the config lock a reconnect may be holding.
+    if !client.is_connected() {
+        return Err(Redirect::to("/"));
+    }
     let config = client.config.lock().await;
-    let tree = match build_tree(&*client.client.read().await, &config.internal.augmentations).await {
+    let tree = match build_tree_bounded(&*client.query_client().await, &config.internal.augmentations).await {
         Ok(tree) => tree,
         Err(e) => {
             // Connection down — send the user to the index, which shows the banner.
@@ -419,7 +453,7 @@ pub async fn client(
         }
     };
     drop(config);
-    let client = match client.client.read().await.client_info(id).await {
+    let client = match client.query_client().await.client_info(id).await {
         Ok(client) => client,
         Err(_) => {
             return Err(Redirect::to("/"));

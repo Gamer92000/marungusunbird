@@ -135,24 +135,22 @@ async fn main() {
     tokio::spawn(async move {
         loop {
             let epoch = event_client.epoch();
-            // Scope the read guard so it is released before a potential reconnect
-            // (which needs the write lock). The wait is additionally bounded so
-            // the guard is dropped periodically — otherwise a watchdog-triggered
-            // reconnect could never acquire the write lock while this task waits
-            // on a silent, dead connection. Timing out and re-looping loses no
-            // events: they stay buffered in the receiver channel.
-            let event = {
-                let client = event_client.client.read().await;
-                match tokio::time::timeout(
-                    std::time::Duration::from_secs(2),
-                    client.wait_for_event(),
-                )
-                .await
-                {
-                    Ok(event) => event,
-                    Err(_) => continue,
-                }
+            // Clone the client handle out of the lock; no guard is held while
+            // waiting. The wait is still bounded so a silently dead connection
+            // can't park this task forever — timing out re-fetches the handle
+            // and picks up a connection the watchdog may have swapped in. No
+            // events are lost: they stay buffered in the receiver channel.
+            let client = event_client.query_client().await;
+            let event = match tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                client.wait_for_event(),
+            )
+            .await
+            {
+                Ok(event) => event,
+                Err(_) => continue,
             };
+            drop(client);
             match event {
                 Ok(Event::ClientMoved(_))
                 | Ok(Event::ClientEnterView(_))
