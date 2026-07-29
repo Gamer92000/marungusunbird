@@ -39,7 +39,7 @@ jobs:
         run: |
           echo ::set-output name=VERSION::$(cat Cargo.toml | grep version | head -1 | cut -d '"' -f 2)
       - name: Build image and push to GHCR
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           tags: |
             ghcr.io/gamer92000/marungusunbird:${{ steps.extract_version.outputs.VERSION }}
