@@ -10,7 +10,7 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Install Cargo
         uses: dtolnay/rust-toolchain@stable
         with:

@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Install Cargo
         uses: dtolnay/rust-toolchain@stable
       - name: Install dependencies
@@ -24,7 +24,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'release')
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@v3
